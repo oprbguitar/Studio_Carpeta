@@ -150,16 +150,29 @@
     }
     .case-mini .btn { width: 100%; margin-top: 12px; }
     .collapse {
-      border: 0;
-      background: transparent;
-      color: var(--muted);
-      font-size: 12px;
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      background: #fff;
+      color: var(--blue-900);
+      font-size: 24px;
       font-weight: 750;
-      display: flex;
+      line-height: 1;
+      display: grid;
+      place-items: center;
       align-items: center;
-      gap: 9px;
-      padding: 8px 2px;
+      padding: 0 0 2px;
+      box-shadow: 0 8px 18px rgba(7, 53, 183, .06);
+      transition: transform var(--ease), border-color var(--ease), box-shadow var(--ease), background var(--ease);
     }
+    .collapse:hover {
+      background: #f4f8ff;
+      border-color: #aecaef;
+      box-shadow: 0 12px 24px rgba(7, 53, 183, .11);
+      transform: translateY(-1px);
+    }
+    .collapse:active { transform: translateY(0); }
 
     .legal-side {
       color: var(--muted);
@@ -174,7 +187,6 @@
     #app.sidebar-collapsed .brand-acronym,
     #app.sidebar-collapsed .nav span,
     #app.sidebar-collapsed .case-mini,
-    #app.sidebar-collapsed .collapse span,
     #app.sidebar-collapsed .legal-side { display: none; }
     #app.sidebar-collapsed .mark { width: 42px; height: 48px; }
     #app.sidebar-collapsed .nav button { justify-content: center; padding: 8px; }
@@ -284,20 +296,6 @@
       font-size: 13px;
       font-weight: 850;
     }
-    .legal-top {
-      position: absolute;
-      left: 24px;
-      right: 24px;
-      bottom: 1px;
-      text-align: center;
-      color: rgba(6, 40, 111, .62);
-      font-size: 9.5px;
-      pointer-events: none;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
     .content {
       min-height: 0;
       overflow: hidden;
@@ -570,6 +568,9 @@
     }
     th {
       height: 32px;
+      position: sticky;
+      top: 0;
+      z-index: 2;
       background: #f4f8ff;
       color: var(--blue-950);
       text-align: left;
@@ -589,10 +590,49 @@
       white-space: nowrap;
     }
     tr.selected { background: #f0f6ff; }
+    .row-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+    .row-actions .icon-btn {
+      width: 26px;
+      height: 26px;
+    }
     .table-wrap {
       border: 1px solid var(--line);
       border-radius: var(--radius);
       overflow: hidden;
+    }
+    .table-scroll {
+      max-height: min(31vh, 315px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: #aecaef #f4f8ff;
+    }
+    .table-scroll::-webkit-scrollbar { width: 8px; }
+    .table-scroll::-webkit-scrollbar-track { background: #f4f8ff; }
+    .table-scroll::-webkit-scrollbar-thumb { background: #aecaef; border-radius: 999px; }
+    .knowledge-grid .table-scroll { max-height: min(34vh, 330px); }
+    .left-stack .table-scroll { max-height: min(30vh, 260px); }
+    .knowledge-left > .panel:first-child,
+    .left-stack > .panel:first-child {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+    }
+    .knowledge-left > .panel:first-child .table-wrap,
+    .left-stack > .panel:first-child .table-wrap {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) auto;
+    }
+    .knowledge-left > .panel:first-child .table-scroll,
+    .left-stack > .panel:first-child .table-scroll {
+      max-height: none;
+      min-height: 0;
     }
     .table-foot {
       height: 34px;
@@ -783,6 +823,24 @@
       gap: 12px;
       position: relative;
     }
+    .theory-connectors {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+      overflow: visible;
+    }
+    .theory-connectors path {
+      fill: none;
+      stroke: rgba(6, 66, 229, .52);
+      stroke-width: .8;
+      stroke-dasharray: 2.5 2.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vector-effect: non-scaling-stroke;
+    }
     .theory-card {
       border: 1px solid var(--line);
       border-radius: var(--radius);
@@ -791,6 +849,7 @@
       min-width: 0;
       overflow: hidden;
       position: relative;
+      z-index: 1;
       cursor: pointer;
       transition: transform var(--ease), box-shadow var(--ease), border-color var(--ease), background var(--ease);
     }
@@ -808,7 +867,7 @@
     }
     .theory-card:hover {
       transform: translateY(-3px);
-      border-color: var(--gold);
+      border-color: var(--blue-700);
       box-shadow: 0 14px 28px rgba(7, 53, 183, .13);
     }
     .theory-card:hover:after { opacity: 1; transform: translateX(0); }
@@ -868,7 +927,7 @@
     .knowledge-left {
       min-height: 0;
       display: grid;
-      grid-template-rows: minmax(275px, 1fr) minmax(130px, .48fr);
+      grid-template-rows: minmax(330px, 1fr) minmax(104px, .25fr);
       gap: 12px;
     }
     .knowledge-right {
@@ -1053,7 +1112,6 @@
       .nav button { justify-content: center; padding: 8px; }
       .topbar { grid-template-columns: minmax(0, 1fr) auto; padding: 8px 12px; }
       .search { display: none; }
-      .legal-top { left: 70px; right: 12px; text-align: left; }
       .main-two, .theory-grid, .knowledge-grid { grid-template-columns: 1fr; }
       .right-stack, .knowledge-right, .theory-grid > .ai-panel { display: none; }
       .home-bottom { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1126,11 +1184,11 @@
       .table-wrap { font-size: 10px; }
       table th:nth-child(n+5), table td:nth-child(n+5) { display: none; }
       .canvas { grid-template-columns: 1fr; grid-template-rows: none; }
+      .theory-connectors { display: none; }
       .summary-cell { padding: 9px; grid-template-columns: 34px 1fr; }
       .orb { width: 34px; height: 34px; }
       .mobile-notice { display: block; }
       .legal-mobile { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .legal-top { display: none; }
       .footer { grid-template-columns: 1fr; padding: 0 10px; }
       .footer .links, .footer > div:nth-child(2) { display: none; }
       .evidence-row { grid-template-columns: 56px minmax(0,1fr); }
@@ -1315,7 +1373,7 @@
           <button class="btn ghost" data-open-detail>${"Ver detalles"} ${icon("external")}</button>
         </div>
         <div class="legal-side" title="${LEGAL}">${LEGAL}</div>
-        <button class="collapse" data-toggle-sidebar aria-label="${state.sidebarCollapsed ? "Expandir menú" : "Colapsar menú"}">${icon(state.sidebarCollapsed ? "external" : "close")}<span>${state.sidebarCollapsed ? "Expandir menú" : "Colapsar menú"}</span></button>
+        <button class="collapse" data-toggle-sidebar aria-label="${state.sidebarCollapsed ? "Expandir barra lateral" : "Contraer barra lateral"}">${state.sidebarCollapsed ? "›" : "‹"}</button>
       </aside>`;
     }
 
@@ -1331,7 +1389,6 @@
           <div class="user"><div class="avatar">D</div><span>Doctor</span></div>
           <button class="icon-btn" aria-label="Menú de usuario" data-toast="Perfil simulado.">${icon("close")}</button>
         </div>
-        <div class="legal-top">${LEGAL}</div>
       </header>`;
     }
 
@@ -1393,7 +1450,7 @@
     }
 
     function caseTablePanel() {
-      return `<div class="panel pad"><div class="section-head"><h2 class="section-title">Listado de casos</h2><button class="btn primary" data-toast="Nuevo caso simulado.">${icon("plus")} Nuevo caso</button></div>${filters(["Estado","Prioridad","Etapa procesal","Delito"], "Buscar caso...")}<div class="table-wrap"><table><thead><tr><th>Expediente</th><th>Delito</th><th>Investigado / Imputado</th><th>Fiscal</th><th>Etapa</th><th>Prioridad</th><th>Fecha límite</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${DEMO_DATA.caseRows.map((r, i) => `<tr class="${i === 0 ? "selected" : ""}"><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td><td>${priority(r[5])}</td><td>${r[6]}</td><td>${status(r[7])}</td><td>${rowActions()}</td></tr>`).join("")}</tbody></table><div class="table-foot"><span>Mostrando 6 de 124 casos</span>${pages("21")}</div></div></div>`;
+      return `<div class="panel pad"><div class="section-head"><h2 class="section-title">Listado de casos</h2><button class="btn primary" data-toast="Nuevo caso simulado.">${icon("plus")} Nuevo caso</button></div>${filters(["Estado","Prioridad","Etapa procesal","Delito"], "Buscar caso...")}<div class="table-wrap"><div class="table-scroll"><table><thead><tr><th>Expediente</th><th>Delito</th><th>Investigado / Imputado</th><th>Fiscal</th><th>Etapa</th><th>Prioridad</th><th>Fecha límite</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${DEMO_DATA.caseRows.map((r, i) => `<tr class="${i === 0 ? "selected" : ""}"><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td><td>${priority(r[5])}</td><td>${r[6]}</td><td>${status(r[7])}</td><td>${rowActions()}</td></tr>`).join("")}</tbody></table></div><div class="table-foot"><span>Mostrando 6 de 124 casos</span>${pages("21")}</div></div></div>`;
     }
 
     function jurisprudencia() {
@@ -1435,7 +1492,7 @@
           ${kpis([["doc","Registros totales","186","",""],["clock","Actuaciones recientes","24","","green"],["user","Usuarios intervinientes","12","","gold"],["target","Cambios relevantes","8","","purple"]])}
           <div class="knowledge-grid">
             <div class="knowledge-left">
-              <div class="panel pad"><h2 class="section-title">Buscar historial</h2>${filters(["Tipo de evento","Usuario","Módulo","Fecha"], "Buscar actuación o documento...")}<div class="table-wrap"><table><thead><tr><th>Fecha y hora</th><th>Evento</th><th>Caso</th><th>Usuario</th><th>Módulo</th><th>Relevancia</th><th>Acciones</th></tr></thead><tbody>${DEMO_DATA.historial.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td><td>${priority(r[5])}</td><td>${rowActions()}</td></tr>`).join("")}</tbody></table><div class="table-foot"><span>Mostrando 1–5 de 186 resultados</span>${pages("38")}</div></div></div>
+              <div class="panel pad"><h2 class="section-title">Buscar historial</h2>${filters(["Tipo de evento","Usuario","Módulo","Fecha"], "Buscar actuación o documento...")}<div class="table-wrap"><div class="table-scroll"><table><thead><tr><th>Fecha y hora</th><th>Evento</th><th>Caso</th><th>Usuario</th><th>Módulo</th><th>Relevancia</th><th>Acciones</th></tr></thead><tbody>${DEMO_DATA.historial.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td><td>${priority(r[5])}</td><td>${rowActions()}</td></tr>`).join("")}</tbody></table></div><div class="table-foot"><span>Mostrando 1–5 de 186 resultados</span>${pages("38")}</div></div></div>
               <div class="bottom-split">${savedPanel("Actividad guardada / reciente")}${quickPanel([["Exportar historial","download"],["Generar reporte","doc"],["Agregar a teoría del caso","folder"],["Ver trazabilidad","scale"]], "two")}</div>
             </div>
             <div class="knowledge-right">${historyDetail()}${aiPanel("historial")}</div>
@@ -1449,7 +1506,7 @@
         <div class="screen" style="grid-template-rows:auto minmax(0,1fr)">
           ${caseStrip()}
           <div class="theory-grid">
-            <div class="panel pad"><div class="canvas">${DEMO_DATA.theoryCards.map((c, i) => theoryCard(c, i)).join("")}</div></div>
+            <div class="panel pad"><div class="canvas">${theoryConnectors()}${DEMO_DATA.theoryCards.map((c, i) => theoryCard(c, i)).join("")}</div></div>
             ${theorySidePanel()}
           </div>
         </div></section>`;
@@ -1460,6 +1517,12 @@
       const cls = `${i === 1 ? " center" : i === 7 ? " warn" : i === 8 ? " next" : ""}${state.selectedTheory === i || state.demoIndex === i && state.demoMode ? " active highlight-step" : ""}`;
       const body = i === 4 ? `<ul class="bullet-list">${c[1].split(". ").filter(Boolean).map(x => `<li>${x.replace(".", "")}</li>`).join("")}</ul>` : i === 6 ? `<div class="tag-row"><span class="tag">Documental</span><span>Actas, registros y reportes policiales.</span><span class="tag green">Testimonial</span><span>Declaraciones de víctima y testigos.</span><span class="tag purple">Material</span><span>Videos, arma incautada, celulares.</span></div>` : `<p class="card-text">${c[1]}</p>`;
       return `<article class="theory-card${cls}" role="button" tabindex="0" data-theory-index="${i}" aria-label="Abrir detalle de ${c[0]}"><div>${i === 1 ? `<div class="orb" style="margin:0 auto 10px">${icon(c[2])}</div>` : `<div class="card-title">${icon(c[2])}<span>${c[0]}</span></div>`}${i === 1 ? `<h2 class="section-title">${c[0]}</h2>` : ""}${body}${extra}</div></article>`;
+    }
+
+    function theoryConnectors() {
+      return `<svg class="theory-connectors" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M16.6 16.6 H50 H83.4 L16.6 50 H50 H83.4 L16.6 83.4 H50 H83.4"/>
+      </svg>`;
     }
 
     function theorySidePanel() {
@@ -1490,7 +1553,7 @@
     }
 
     function knowledgeTable(cfg) {
-      return `<div class="table-wrap"><table><thead><tr>${cfg.columns.map(c => `<th>${c}</th>`).join("")}</tr></thead><tbody>${cfg.rows.map((r, i) => `<tr class="${i === 0 ? "selected" : ""}">${r.map((x, idx) => `<td>${idx === 4 || idx === 3 && cfg.id === "normativa" ? priority(x) : idx === 0 ? `<b>${x}</b>` : x}</td>`).join("")}<td>${rowActions()}</td></tr>`).join("")}</tbody></table><div class="table-foot"><span>Mostrando resultados principales</span>${pages(cfg.id === "jurisprudencia" ? "50" : "31")}</div></div>`;
+      return `<div class="table-wrap"><div class="table-scroll"><table><thead><tr>${cfg.columns.map(c => `<th>${c}</th>`).join("")}</tr></thead><tbody>${cfg.rows.map((r, i) => `<tr class="${i === 0 ? "selected" : ""}">${r.map((x, idx) => `<td>${idx === 4 || idx === 3 && cfg.id === "normativa" ? priority(x) : idx === 0 ? `<b>${x}</b>` : x}</td>`).join("")}<td>${rowActions()}</td></tr>`).join("")}</tbody></table></div><div class="table-foot"><span>Mostrando resultados principales</span>${pages(cfg.id === "jurisprudencia" ? "50" : "31")}</div></div>`;
     }
 
     function filters(names, placeholder, compact = false) {
@@ -1541,7 +1604,7 @@
       return `<span class="pill ${tone}">${v}</span>`;
     }
     function rowActions() {
-      return `<button class="icon-btn" data-toast="Ver simulado." aria-label="Ver">${icon("eye")}</button><button class="icon-btn" data-toast="Editar simulado." aria-label="Editar">${icon("edit")}</button><button class="icon-btn" data-toast="Abrir simulado." aria-label="Abrir">${icon("external")}</button>`;
+      return `<span class="row-actions"><button class="icon-btn" data-toast="Ver simulado." aria-label="Ver">${icon("eye")}</button><button class="icon-btn" data-toast="Editar simulado." aria-label="Editar">${icon("edit")}</button><button class="icon-btn" data-toast="Abrir simulado." aria-label="Abrir">${icon("external")}</button></span>`;
     }
     function pages(last) {
       return `<div class="pages"><button class="page">‹</button><button class="page active">1</button><button class="page">2</button><button class="page">3</button><span>...</span><button class="page">${last}</button><button class="page">›</button></div>`;
