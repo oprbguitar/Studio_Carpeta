@@ -558,6 +558,16 @@
       font-weight: 850;
     }
     .filter-input { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+    .filter-input input {
+      min-width: 0;
+      width: 100%;
+      border: 0;
+      outline: 0;
+      color: var(--blue-900);
+      background: transparent;
+      font-size: 11.5px;
+      font-weight: 700;
+    }
 
     table {
       width: 100%;
@@ -735,7 +745,7 @@
 
     .ai-panel {
       display: grid;
-      grid-template-rows: auto minmax(0, 1fr) auto;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
       gap: 8px;
       min-height: 0;
     }
@@ -799,6 +809,7 @@
       display: grid;
       grid-template-columns: minmax(0, 1fr) 36px;
       gap: 8px;
+      align-self: end;
     }
     .ask input {
       height: 32px;
@@ -807,6 +818,11 @@
       padding: 0 10px;
       color: var(--ink);
       min-width: 0;
+    }
+    .ask .btn {
+      height: 32px;
+      min-height: 32px;
+      padding: 0;
     }
 
     .theory-grid {
@@ -937,6 +953,203 @@
       gap: 12px;
     }
     .saved-list .list-row { grid-template-columns: 28px minmax(0, 1fr) auto; min-height: 35px; }
+
+    .canvas-layout {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 12px;
+    }
+    .canvas-shell {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
+    }
+    .canvas-toolbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 10px;
+      margin-bottom: 10px;
+    }
+    .case-tabs {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+    .case-chip {
+      min-height: 30px;
+      border: 1px solid #cddcf4;
+      border-radius: 7px;
+      background: #f5f9ff;
+      color: var(--blue-900);
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 850;
+    }
+    .zoom-controls { display: flex; gap: 7px; align-items: center; }
+    .zoom-value { min-width: 58px; text-align: center; color: var(--blue-900); font-weight: 900; font-size: 12px; }
+    .canvas-board {
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background:
+        radial-gradient(circle, rgba(6, 66, 229, .12) 1px, transparent 1px) 0 0 / 18px 18px,
+        linear-gradient(180deg, #fff, #fbfdff);
+    }
+    .canvas-content {
+      position: absolute;
+      inset: 0;
+      width: 980px;
+      height: 620px;
+      transform-origin: 0 0;
+    }
+    .canvas-links {
+      position: absolute;
+      inset: 0;
+      width: 980px;
+      height: 620px;
+      pointer-events: none;
+      z-index: 1;
+    }
+    .canvas-links path {
+      fill: none;
+      stroke: rgba(6, 66, 229, .72);
+      stroke-width: 1.4;
+      marker-end: url(#canvasArrow);
+    }
+    .canvas-links path.indirect {
+      stroke: rgba(111, 50, 214, .72);
+      stroke-dasharray: 4 4;
+    }
+    .canvas-link-label {
+      fill: var(--blue-900);
+      font-size: 10px;
+      font-weight: 800;
+      paint-order: stroke;
+      stroke: #fff;
+      stroke-width: 4px;
+      stroke-linejoin: round;
+    }
+    .canvas-node {
+      position: absolute;
+      z-index: 2;
+      width: 170px;
+      min-height: 72px;
+      border: 1px solid #b8cdf1;
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px;
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      box-shadow: 0 10px 22px rgba(7, 53, 183, .08);
+      color: var(--blue-950);
+      cursor: grab;
+      user-select: none;
+      transition: border-color var(--ease), box-shadow var(--ease), transform var(--ease), background var(--ease);
+    }
+    .canvas-node:hover {
+      transform: translateY(-2px);
+      border-color: var(--blue-700);
+      box-shadow: 0 14px 28px rgba(7, 53, 183, .14);
+    }
+    .canvas-node:active { cursor: grabbing; }
+    .canvas-node.selected {
+      border-color: var(--gold);
+      box-shadow: inset 3px 0 0 var(--gold), 0 18px 32px rgba(7, 53, 183, .16);
+    }
+    .node-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      background: var(--blue-100);
+      color: var(--blue-900);
+    }
+    .canvas-node.persona { background: #f3fff8; border-color: #9dd9b7; }
+    .canvas-node.vehiculo { background: #f5fff8; border-color: #bdebcf; }
+    .canvas-node.evidencia { background: #fbf7ff; border-color: #d5c1f8; }
+    .canvas-node.hecho { background: #fff9eb; border-color: #ffe0a6; }
+    .canvas-node.normativa,
+    .canvas-node.jurisprudencia { background: #f3fdff; border-color: #afe2eb; }
+    .node-title { font-weight: 900; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .node-sub { color: var(--muted); font-size: 11px; font-weight: 750; margin-top: 3px; }
+    .canvas-detail {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: minmax(215px, .75fr) minmax(178px, .55fr) auto;
+      gap: 10px;
+    }
+    .canvas-detail-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; background: #fff; }
+    .canvas-detail .ai-cols { display: none; }
+    .canvas-detail .chat { gap: 6px; max-height: 68px; overflow: hidden; }
+    .canvas-detail-card .bullet-list { max-height: 58px; overflow: hidden; }
+    .canvas-legend {
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      bottom: 12px;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255,255,255,.92);
+      backdrop-filter: blur(8px);
+      padding: 8px 12px;
+      color: var(--blue-950);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .legend-dot { width: 16px; height: 16px; border-radius: 4px; display: inline-block; margin-right: 5px; vertical-align: middle; background: var(--blue-100); }
+    .legend-dot.persona { background: #bfead0; }
+    .legend-dot.vehiculo { background: #d6f2df; }
+    .legend-dot.evidencia { background: #d9c5fb; }
+    .legend-dot.hecho { background: #ffe2a4; }
+    .legend-dot.legal { background: #aee8ef; }
+    .sortable th { cursor: pointer; }
+    .sortable th:hover { color: var(--blue-700); }
+    .quick-prompts {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin: 6px 0;
+    }
+    .prompt-chip {
+      border: 1px solid #cddcf4;
+      border-radius: 999px;
+      background: #fff;
+      color: var(--blue-900);
+      padding: 4px 7px;
+      font-size: 10px;
+      font-weight: 850;
+    }
+    .ai-panel.is-floating {
+      position: relative;
+      transform: translate(var(--ia-x, 0px), var(--ia-y, 0px));
+      z-index: 8;
+    }
+    .ai-panel .ai-title { cursor: grab; }
+    .ai-panel.dragging .ai-title { cursor: grabbing; }
+    .ai-panel.minimized {
+      grid-template-rows: auto;
+      align-self: start;
+    }
+    .ai-panel.minimized .chat,
+    .ai-panel.minimized .ask,
+    .ai-panel.minimized .quick-prompts { display: none; }
 
     .footer {
       min-width: 0;
@@ -1113,6 +1326,7 @@
       .topbar { grid-template-columns: minmax(0, 1fr) auto; padding: 8px 12px; }
       .search { display: none; }
       .main-two, .theory-grid, .knowledge-grid { grid-template-columns: 1fr; }
+      .canvas-layout { grid-template-columns: 1fr; }
       .right-stack, .knowledge-right, .theory-grid > .ai-panel { display: none; }
       .home-bottom { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
@@ -1168,7 +1382,13 @@
       .screen { overflow: visible; display: block; }
       .screen > * { margin-bottom: 10px; }
       .head { grid-template-columns: 1fr; }
-      .actions { justify-content: start; overflow: hidden; }
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr;
+        justify-content: stretch;
+        overflow: visible;
+      }
+      .actions .btn { width: 100%; min-width: 0; }
       .hero-actions, .kpis, .summary-strip, .summary-strip.four, .home-bottom, .bottom-split {
         display: grid;
         grid-template-columns: 1fr;
@@ -1185,6 +1405,13 @@
       table th:nth-child(n+5), table td:nth-child(n+5) { display: none; }
       .canvas { grid-template-columns: 1fr; grid-template-rows: none; }
       .theory-connectors { display: none; }
+      .canvas-toolbar { grid-template-columns: 1fr; }
+      .zoom-controls { justify-content: start; flex-wrap: wrap; }
+      .canvas-board { min-height: 520px; overflow: auto; }
+      .canvas-content { transform: none !important; }
+      .canvas-node { cursor: pointer; }
+      .canvas-detail { display: none; }
+      .ai-panel.is-floating { transform: none !important; }
       .summary-cell { padding: 9px; grid-template-columns: 34px 1fr; }
       .orb { width: 34px; height: 34px; }
       .mobile-notice { display: block; }
@@ -1226,7 +1453,8 @@
         ["teoria", "doc", "Teoría de Caso"],
         ["jurisprudencia", "scale", "Jurisprudencia"],
         ["normativa", "book", "Normativa"],
-        ["historial", "calendar", "Historial"]
+        ["historial", "calendar", "Historial"],
+        ["canvas", "target", "Canvas dinámico"]
       ],
       homeCards: [
         ["Subir caso", "Registrar nuevo expediente, documentos y datos iniciales.", "Iniciar carga", "doc", "blue", "gestion"],
@@ -1296,7 +1524,47 @@
         teoria: "Para el caso MP-2024-01567, aplica el delito de Robo Agravado conforme a los artículos 188 y 189 del Código Penal. La teoría debe reforzar violencia, apoderamiento y ánimo de lucro.",
         jurisprudencia: "La Cas. N.° 626-2022/Lima es altamente relevante: establece que el uso de arma de fuego idónea y amenaza configuran agravante del art. 189 CP.",
         normativa: "La normativa que fortalece la imputación es: Código Penal arts. 188 y 189; Código Procesal Penal arts. 159, 160, 313 y 314; LOMP arts. 1, 25 y 26.",
-        historial: "Las actuaciones más útiles para la línea de imputación son: formalización, registro de evidencia, acta de incautación y consulta de jurisprudencia vinculante."
+        historial: "Las actuaciones más útiles para la línea de imputación son: formalización, registro de evidencia, acta de incautación y consulta de jurisprudencia vinculante.",
+        canvas: "El mapa relacional sugiere priorizar la conexión entre Juan Pérez López, extracción de celular, video cámara y acta de incautación. Esa cadena fortalece autoría, amenaza y trazabilidad probatoria."
+      },
+      canvas: {
+        nodes: [
+          ["case-1567", "caso", "MP-2024-01567", "Robo Agravado", "Caso fiscal principal", 26, 18],
+          ["person-juan", "persona", "Juan Pérez López", "Imputado", "Identificado por video y extracción móvil", 275, 20],
+          ["vehicle-yaris", "vehiculo", "Auto Toyota Yaris gris", "B7Y-123", "Vehículo asociado al traslado", 526, 26],
+          ["evidence-video", "evidencia", "Video cámara", "VID-2024-0321", "Corrobora ingreso y amenaza", 795, 36],
+          ["case-1432", "caso", "MP-2024-01432", "Estafa Agravada", "Caso relacionado para contraste", 26, 250],
+          ["evidence-phone", "evidencia", "Extracción de celular", "EXT-2024-1189", "Chats, llamadas y fotos recuperadas", 292, 172],
+          ["evidence-call", "evidencia", "Llamadas WhatsApp", "WA-2024-S587", "Comunicación previa al hecho", 552, 178],
+          ["doc-seizure", "evidencia", "Acta de incautación", "AC-2024-2145", "Arma y celulares incautados", 817, 188],
+          ["person-maria", "persona", "María Gómez Rojas", "Sospechosa", "Vínculo operativo indirecto", 265, 352],
+          ["vehicle-moto", "vehiculo", "Mototaxi roja", "1234-AA", "Vehículo alterno observado", 505, 358],
+          ["plate", "evidencia", "Placa vehicular", "PLACA-2B42-TRF", "Referencia visual asociada", 735, 370],
+          ["witness", "persona", "Testigo 1", "Declarante", "Aporta información de contexto", 160, 520],
+          ["fact", "hecho", "Hechos", "Resumen de hechos", "Núcleo fáctico de imputación", 407, 522],
+          ["norm", "normativa", "Normativa aplicable", "CP: art. 188 y 189-A", "Base normativa del caso", 642, 522],
+          ["juris", "jurisprudencia", "Jurisprudencia relacionada", "RN: 1234-2019, Lima", "Criterio de refuerzo", 835, 522]
+        ],
+        links: [
+          ["case-1567", "person-juan", "Imputado en"],
+          ["person-juan", "vehicle-yaris", "Conduce"],
+          ["vehicle-yaris", "evidence-video", "Relacionado con"],
+          ["evidence-video", "doc-seizure", "Corrobora"],
+          ["case-1567", "case-1432", "Relacionado con"],
+          ["case-1567", "evidence-phone", "Vinculado por evidencia"],
+          ["person-juan", "evidence-phone", "Comunicación"],
+          ["evidence-phone", "evidence-call", "Contiene"],
+          ["evidence-call", "doc-seizure", "Corrobora"],
+          ["case-1432", "person-maria", "Investigación"],
+          ["person-maria", "vehicle-moto", "Utiliza"],
+          ["vehicle-moto", "plate", "Relacionado con"],
+          ["plate", "doc-seizure", "Sustenta"],
+          ["person-maria", "witness", "Declara"],
+          ["witness", "fact", "Aporta información"],
+          ["fact", "vehicle-moto", "Relaciona"],
+          ["fact", "norm", "Sustentado en"],
+          ["norm", "juris", "Refuerza"]
+        ]
       }
     };
 
@@ -1308,12 +1576,27 @@
       drawer: false,
       sidebarCollapsed: localStorage.getItem("fcis.sidebarCollapsed") === "true" || matchMedia("(max-width: 980px)").matches,
       selectedTheory: 0,
+      theoryOrder: loadJson("fcis.theoryOrder", DEMO_DATA.theoryCards.map((_, i) => i)),
       demoMode: false,
       demoIndex: 0,
+      canvasZoom: Number(localStorage.getItem("fcis.canvasZoom") || "1"),
+      selectedCanvasNode: localStorage.getItem("fcis.selectedCanvasNode") || "person-juan",
+      canvasPositions: loadJson("fcis.canvasPositions", {}),
+      table: loadJson("fcis.tableState", {}),
+      ia: loadJson("fcis.iaPanel", { minimized: false, x: 0, y: 0 }),
       searchQuery: "",
       actionCount: Number(localStorage.getItem("fcis.actionCount") || "0"),
       lastUpdated: DEMO_DATA.case.updated
     };
+
+    function loadJson(key, fallback) {
+      try {
+        const value = localStorage.getItem(key);
+        return value ? JSON.parse(value) : fallback;
+      } catch {
+        return fallback;
+      }
+    }
 
     function icon(name) {
       const paths = {
@@ -1397,7 +1680,7 @@
     }
 
     function renderScreen() {
-      const screens = { inicio, gestion, teoria, jurisprudencia, normativa, historial };
+      const screens = { inicio, gestion, teoria, jurisprudencia, normativa, historial, canvas: canvasScreen };
       return screens[state.screen] ? screens[state.screen]() : inicio();
     }
 
@@ -1492,12 +1775,100 @@
           ${kpis([["doc","Registros totales","186","",""],["clock","Actuaciones recientes","24","","green"],["user","Usuarios intervinientes","12","","gold"],["target","Cambios relevantes","8","","purple"]])}
           <div class="knowledge-grid">
             <div class="knowledge-left">
-              <div class="panel pad"><h2 class="section-title">Buscar historial</h2>${filters(["Tipo de evento","Usuario","Módulo","Fecha"], "Buscar actuación o documento...")}<div class="table-wrap"><div class="table-scroll"><table><thead><tr><th>Fecha y hora</th><th>Evento</th><th>Caso</th><th>Usuario</th><th>Módulo</th><th>Relevancia</th><th>Acciones</th></tr></thead><tbody>${DEMO_DATA.historial.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td><td>${priority(r[5])}</td><td>${rowActions()}</td></tr>`).join("")}</tbody></table></div><div class="table-foot"><span>Mostrando 1–5 de 186 resultados</span>${pages("38")}</div></div></div>
+              <div class="panel pad"><h2 class="section-title">Buscar historial</h2>${filters(["Tipo de evento","Usuario","Módulo","Fecha"], "Buscar actuación o documento...", false, "historial")}${dynamicTable("historial", DEMO_DATA.historial, ["Fecha y hora","Evento","Caso","Usuario","Módulo","Relevancia","Acciones"], "38")}</div>
               <div class="bottom-split">${savedPanel("Actividad guardada / reciente")}${quickPanel([["Exportar historial","download"],["Generar reporte","doc"],["Agregar a teoría del caso","folder"],["Ver trazabilidad","scale"]], "two")}</div>
             </div>
             <div class="knowledge-right">${historyDetail()}${aiPanel("historial")}</div>
           </div>
         </div></section>`;
+    }
+
+    function canvasScreen() {
+      const actions = `<button class="btn primary" data-canvas-action="Nuevo nodo">${icon("plus")} Nuevo nodo</button><button class="btn ghost" data-canvas-action="Vincular">${icon("target")} Vincular</button><button class="btn ghost" data-canvas-action="Contrastar">${icon("scale")} Contrastar</button>`;
+      return `<section class="content">${header("Canvas dinámico del caso", "Arrastra, vincula y cruza información entre casos, personas, vehículos y evidencias.", actions)}
+        <div class="screen">
+          <div class="canvas-layout">
+            <div class="panel pad canvas-shell">
+              <div class="canvas-toolbar">
+                <div class="case-tabs"><strong>Casos a contrastar</strong><button class="case-chip">MP-2024-01567 ×</button><button class="case-chip">MP-2024-01432 ×</button><button class="btn ghost small" data-canvas-action="Contrastar">${icon("scale")} Contrastar</button></div>
+                <div class="zoom-controls">
+                  <button class="btn ghost small" data-zoom="-">−</button>
+                  <span class="zoom-value">${Math.round(state.canvasZoom * 100)}%</span>
+                  <button class="btn ghost small" data-zoom="+">+</button>
+                  <button class="btn ghost small" data-zoom="fit" aria-label="Ajustar canvas">${icon("external")}</button>
+                </div>
+              </div>
+              <div class="canvas-board" data-canvas-board>
+                <div class="canvas-content" data-canvas-content style="transform:scale(${canvasScale()})">
+                  ${canvasSvg()}
+                  ${DEMO_DATA.canvas.nodes.map(canvasNode).join("")}
+                </div>
+                <div class="canvas-legend">
+                  ${["Casos","Personas","Vehículos","Evidencias","Hechos","Normativa / Jurisprudencia"].map((x, i) => `<span><i class="legend-dot ${["","persona","vehiculo","evidencia","hecho","legal"][i]}"></i>${x}</span>`).join("")}
+                  <span style="margin-left:auto">- - - Relación indirecta</span>
+                </div>
+              </div>
+            </div>
+            <div class="canvas-detail">
+              ${canvasDetail()}
+              ${aiPanel("canvas")}
+              <div class="panel pad" style="display:grid;gap:8px"><button class="btn ghost" data-toast="Detalle simulado abierto.">Ver detalle ${icon("external")}</button><button class="btn primary" data-canvas-action="Agregar vínculo">${icon("plus")} Agregar vínculo</button></div>
+            </div>
+          </div>
+        </div>
+      </section>`;
+    }
+
+    function canvasNode(raw) {
+      const [id, type, title, subtitle] = raw;
+      const p = canvasPos(raw);
+      const selected = state.selectedCanvasNode === id ? " selected" : "";
+      return `<button class="canvas-node ${type}${selected}" data-canvas-node="${id}" style="left:${p.x}px;top:${p.y}px" aria-label="Seleccionar ${title}">
+        <span class="node-icon">${icon(canvasIcon(type))}</span>
+        <span><span class="node-title">${title}</span><span class="node-sub">${subtitle}</span></span>
+      </button>`;
+    }
+
+    function canvasSvg() {
+      const links = DEMO_DATA.canvas.links.map((l, i) => {
+        const a = canvasPos(canvasNodeById(l[0]));
+        const b = canvasPos(canvasNodeById(l[1]));
+        const x1 = a.x + 170, y1 = a.y + 36, x2 = b.x, y2 = b.y + 36;
+        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2 - 8;
+        const curve = Math.max(30, Math.abs(x2 - x1) * .32);
+        const indirect = i % 4 === 0 ? " indirect" : "";
+        return `<path class="${indirect}" d="M${x1} ${y1} C${x1 + curve} ${y1}, ${x2 - curve} ${y2}, ${x2} ${y2}"/><text class="canvas-link-label" x="${mx}" y="${my}" text-anchor="middle">${l[2]}</text>`;
+      }).join("");
+      return `<svg class="canvas-links" viewBox="0 0 980 620" aria-hidden="true"><defs><marker id="canvasArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#0642e5"/></marker></defs>${links}</svg>`;
+    }
+
+    function canvasDetail() {
+      const node = canvasNodeById(state.selectedCanvasNode) || DEMO_DATA.canvas.nodes[0];
+      const rels = DEMO_DATA.canvas.links.filter(l => l[0] === node[0] || l[1] === node[0]);
+      return `<div class="panel pad canvas-detail-card">
+        <div class="section-head"><h2 class="section-title">Elemento seleccionado</h2><button class="icon-btn" data-toast="Selección simulada limpiada.">${icon("close")}</button></div>
+        <div style="display:grid;grid-template-columns:46px 1fr;gap:10px;align-items:center;margin:10px 0"><div class="orb">${icon(canvasIcon(node[1]))}</div><div><h2 class="section-title">${node[2]}</h2><span class="pill green">${node[3]}</span></div></div>
+        <div class="detail-grid"><div><div class="detail-label">Tipo</div><div class="detail-value">${node[1]}</div></div><div><div class="detail-label">Estado</div><div class="detail-value">Identificado</div></div><div class="wide"><div class="detail-label">Nota</div><div class="detail-value">${node[4]}</div></div></div>
+        <h2 class="section-title" style="margin-top:12px">Relaciones (${rels.length})</h2>
+        <ul class="bullet-list">${rels.slice(0, 5).map(r => `<li>${r[2]}: ${canvasNodeById(r[0])[2]} → ${canvasNodeById(r[1])[2]}</li>`).join("")}</ul>
+      </div>`;
+    }
+
+    function canvasNodeById(id) {
+      return DEMO_DATA.canvas.nodes.find(n => n[0] === id) || DEMO_DATA.canvas.nodes[0];
+    }
+
+    function canvasPos(node) {
+      const saved = state.canvasPositions[node[0]];
+      return saved || { x: node[5], y: node[6] };
+    }
+
+    function canvasIcon(type) {
+      return ({ caso: "folder", persona: "user", vehiculo: "target", evidencia: "doc", hecho: "book", normativa: "scale", jurisprudencia: "scale" })[type] || "doc";
+    }
+
+    function canvasScale() {
+      return state.canvasZoom * .76;
     }
 
     function teoria() {
@@ -1506,17 +1877,22 @@
         <div class="screen" style="grid-template-rows:auto minmax(0,1fr)">
           ${caseStrip()}
           <div class="theory-grid">
-            <div class="panel pad"><div class="canvas">${theoryConnectors()}${DEMO_DATA.theoryCards.map((c, i) => theoryCard(c, i)).join("")}</div></div>
+            <div class="panel pad"><div class="canvas" data-theory-canvas>${theoryConnectors()}${theoryDisplayOrder().map((i, pos) => theoryCard(DEMO_DATA.theoryCards[i], i, pos)).join("")}</div></div>
             ${theorySidePanel()}
           </div>
         </div></section>`;
     }
 
-    function theoryCard(c, i) {
+    function theoryCard(c, i, pos = i) {
       const extra = i === 5 ? `<button class="btn ghost small" data-open-evidence style="margin-top:10px">Ver evidencias ${icon("external")}</button>` : "";
       const cls = `${i === 1 ? " center" : i === 7 ? " warn" : i === 8 ? " next" : ""}${state.selectedTheory === i || state.demoIndex === i && state.demoMode ? " active highlight-step" : ""}`;
       const body = i === 4 ? `<ul class="bullet-list">${c[1].split(". ").filter(Boolean).map(x => `<li>${x.replace(".", "")}</li>`).join("")}</ul>` : i === 6 ? `<div class="tag-row"><span class="tag">Documental</span><span>Actas, registros y reportes policiales.</span><span class="tag green">Testimonial</span><span>Declaraciones de víctima y testigos.</span><span class="tag purple">Material</span><span>Videos, arma incautada, celulares.</span></div>` : `<p class="card-text">${c[1]}</p>`;
-      return `<article class="theory-card${cls}" role="button" tabindex="0" data-theory-index="${i}" aria-label="Abrir detalle de ${c[0]}"><div>${i === 1 ? `<div class="orb" style="margin:0 auto 10px">${icon(c[2])}</div>` : `<div class="card-title">${icon(c[2])}<span>${c[0]}</span></div>`}${i === 1 ? `<h2 class="section-title">${c[0]}</h2>` : ""}${body}${extra}</div></article>`;
+      return `<article class="theory-card${cls}" draggable="true" role="button" tabindex="0" data-theory-index="${i}" data-theory-pos="${pos}" aria-label="Abrir detalle de ${c[0]}"><div>${i === 1 ? `<div class="orb" style="margin:0 auto 10px">${icon(c[2])}</div>` : `<div class="card-title">${icon(c[2])}<span>${c[0]}</span></div>`}${i === 1 ? `<h2 class="section-title">${c[0]}</h2>` : ""}${body}${extra}</div></article>`;
+    }
+
+    function theoryDisplayOrder() {
+      const valid = state.theoryOrder.filter(i => DEMO_DATA.theoryCards[i]);
+      return valid.length === DEMO_DATA.theoryCards.length ? valid : DEMO_DATA.theoryCards.map((_, i) => i);
     }
 
     function theoryConnectors() {
@@ -1527,7 +1903,9 @@
 
     function theorySidePanel() {
       const card = DEMO_DATA.theoryCards[state.selectedTheory] || DEMO_DATA.theoryCards[0];
-      return `<div class="panel pad ai-panel"><div class="ai-title"><span>${icon("target")} Detalle e IA-Legal</span><span class="online"><span class="status-dot green"></span>En línea</span></div>
+      const style = `--ia-x:${state.ia.x || 0}px;--ia-y:${state.ia.y || 0}px`;
+      return `<div class="panel pad ai-panel is-floating ${state.ia.minimized ? "minimized" : ""}" data-ai-panel style="${style}"><div class="ai-title" data-ai-handle><span>${icon("target")} Detalle e IA-Legal</span><span class="online"><span class="status-dot green"></span>En línea</span><button class="icon-btn" data-ai-minimize aria-label="${state.ia.minimized ? "Restaurar IA-Legal" : "Minimizar IA-Legal"}">${state.ia.minimized ? "›" : "−"}</button></div>
+        <div class="quick-prompts">${["Fortalece teoría", "Revisa evidencia", "Sugiere norma"].map(p => `<button class="prompt-chip" data-ai-prompt="${p}">${p}</button>`).join("")}</div>
         <div class="chat">
           <div class="bubble response"><strong>${card[0]}</strong><br>${card[1]}</div>
           <div class="bubble">Sugerencia IA: vincula este módulo con evidencia digital, normativa aplicable y actuaciones recientes para reforzar la consistencia de la teoría fiscal.</div>
@@ -1544,7 +1922,7 @@
           ${kpis(cfg.kpiItems)}
           <div class="knowledge-grid">
             <div class="knowledge-left">
-              <div class="panel pad"><h2 class="section-title">${cfg.tableTitle}</h2>${filters(cfg.filters, `Buscar ${cfg.id}...`, cfg.filters.length === 3)}${knowledgeTable(cfg)}</div>
+              <div class="panel pad"><h2 class="section-title">${cfg.tableTitle}</h2>${filters(cfg.filters, `Buscar ${cfg.id}...`, cfg.filters.length === 3, cfg.id)}${knowledgeTable(cfg)}</div>
               <div class="bottom-split">${savedPanel(`${cfg.title} guardada / reciente`)}${quickPanel([["Comparar normas","scale"],["Exportar ficha","download"],["Agregar a teoría del caso","folder"],["Ver texto legal","external"]], "two")}</div>
             </div>
             <div class="knowledge-right">${knowledgeDetail(cfg)}${aiPanel(cfg.aiKey)}</div>
@@ -1553,11 +1931,43 @@
     }
 
     function knowledgeTable(cfg) {
-      return `<div class="table-wrap"><div class="table-scroll"><table><thead><tr>${cfg.columns.map(c => `<th>${c}</th>`).join("")}</tr></thead><tbody>${cfg.rows.map((r, i) => `<tr class="${i === 0 ? "selected" : ""}">${r.map((x, idx) => `<td>${idx === 4 || idx === 3 && cfg.id === "normativa" ? priority(x) : idx === 0 ? `<b>${x}</b>` : x}</td>`).join("")}<td>${rowActions()}</td></tr>`).join("")}</tbody></table></div><div class="table-foot"><span>Mostrando resultados principales</span>${pages(cfg.id === "jurisprudencia" ? "50" : "31")}</div></div>`;
+      return dynamicTable(cfg.id, cfg.rows, cfg.columns, cfg.id === "jurisprudencia" ? "50" : "31");
     }
 
-    function filters(names, placeholder, compact = false) {
-      return `<div class="filters ${compact ? "four" : ""}">${names.map(n => `<label class="filter-label">${n}<select><option>Todas</option><option>Alta</option></select></label>`).join("")}<label class="filter-label">Palabras clave<div class="filter-input">${icon("search")}<span>${placeholder}</span></div></label></div>`;
+    function filters(names, placeholder, compact = false, id = "") {
+      const opts = ["Todas", "Alta", "Media", "2022", "2021", "Derecho Penal", "Sala Penal Permanente", "Doctor"];
+      const s = tableState(id);
+      return `<div class="filters ${compact ? "four" : ""}" data-table-filters="${id}">${names.map((n, idx) => `<label class="filter-label">${n}<select data-table-filter="${id}">${opts.map(o => `<option ${s.filters?.[idx] === o ? "selected" : ""}>${o}</option>`).join("")}</select></label>`).join("")}<label class="filter-label">Palabras clave<div class="filter-input">${icon("search")}<input data-table-search="${id}" value="${escapeHtml(s.q || "")}" placeholder="${placeholder}"></div></label></div>`;
+    }
+
+    function dynamicTable(id, rows, columns, last) {
+      const processed = tableRows(id, rows);
+      const limit = 3;
+      const page = Math.min(tableState(id).page || 1, Math.max(1, Math.ceil(processed.length / limit)));
+      const shown = processed.slice((page - 1) * limit, page * limit);
+      return `<div class="table-wrap" data-table="${id}"><div class="table-scroll"><table class="sortable"><thead><tr>${columns.map((c, i) => `<th ${i < columns.length - 1 ? `data-sort-table="${id}" data-sort-col="${i}"` : ""}>${c}</th>`).join("")}</tr></thead><tbody>${shown.map((r, i) => `<tr class="${i === 0 && page === 1 ? "selected" : ""}">${r.map((x, idx) => `<td>${idx === r.length - 1 || idx === 3 && id === "normativa" || idx === 5 && id === "historial" || idx === 4 && id === "jurisprudencia" ? priority(x) : idx === 0 ? `<b>${x}</b>` : x}</td>`).join("")}<td>${rowActions()}</td></tr>`).join("")}</tbody></table></div><div class="table-foot"><span>Mostrando ${shown.length} de ${processed.length || rows.length} resultados</span>${tablePages(id, page, Math.max(1, Math.ceil(processed.length / limit)), last)}</div></div>`;
+    }
+
+    function tableState(id) {
+      if (!state.table[id]) state.table[id] = { q: "", filters: [], sort: 0, dir: 1, page: 1 };
+      return state.table[id];
+    }
+
+    function tableRows(id, rows) {
+      const s = tableState(id);
+      const activeFilters = (s.filters || []).filter(v => v && v !== "Todas");
+      let out = rows.filter(r => {
+        const text = r.join(" ").toLowerCase();
+        return (!s.q || text.includes(s.q.toLowerCase())) && activeFilters.every(f => text.includes(f.toLowerCase()));
+      });
+      if (Number.isInteger(s.sort)) {
+        out = [...out].sort((a, b) => String(a[s.sort] || "").localeCompare(String(b[s.sort] || ""), "es") * (s.dir || 1));
+      }
+      return out;
+    }
+
+    function tablePages(id, page, total, last) {
+      return `<div class="pages"><button class="page" data-table-page="${id}" data-page="${Math.max(1, page - 1)}">‹</button>${[1,2,3].filter(p => p <= total).map(p => `<button class="page ${p === page ? "active" : ""}" data-table-page="${id}" data-page="${p}">${p}</button>`).join("")}<span>...</span><button class="page" data-table-page="${id}" data-page="${total}">${last}</button><button class="page" data-table-page="${id}" data-page="${Math.min(total, page + 1)}">›</button></div>`;
     }
 
     function caseSummaryPanel() {
@@ -1580,7 +1990,14 @@
     }
 
     function aiPanel(key, tall = false) {
-      return `<div class="panel pad ai-panel"><div class="ai-title"><span>${icon("target")} Asistencia IA-Legal</span><span class="online"><span class="status-dot green"></span>En línea</span></div><div class="chat"><div class="tiny">Consulta sobre este caso</div><div class="bubble">¿Qué ${key === "teoria" ? "normativa es aplicable al caso" : "análisis fortalece este caso"}?</div><div class="bubble response">${DEMO_DATA.ai[key]}</div><div class="ai-cols"><div class="ai-mini"><strong>Normativa aplicable</strong>CP: arts. 188 y 189<br>CPP: arts. 159 y 160</div><div class="ai-mini"><strong>Teorías sugeridas</strong>Autoría directa<br>Apoderamiento</div><div class="ai-mini"><strong>Líneas de sustento</strong>Video, testimonio e incautación</div></div>${tall ? `<button class="btn ghost" data-toast="Análisis completo simulado." style="justify-self:center">Ver análisis completo ${icon("external")}</button>` : ""}</div><div class="ask"><input placeholder="Escribe tu consulta..."><button class="btn primary" data-ai-send>${icon("send")}</button></div></div>`;
+      const prompts = ["Fortalece teoría", "Revisa evidencia", "Sugiere norma"];
+      const style = `--ia-x:${state.ia.x || 0}px;--ia-y:${state.ia.y || 0}px`;
+      return `<div class="panel pad ai-panel is-floating ${state.ia.minimized ? "minimized" : ""}" data-ai-panel style="${style}">
+        <div class="ai-title" data-ai-handle><span>${icon("target")} Asistencia IA-Legal</span><span class="online"><span class="status-dot green"></span>En línea</span><button class="icon-btn" data-ai-minimize aria-label="${state.ia.minimized ? "Restaurar IA-Legal" : "Minimizar IA-Legal"}">${state.ia.minimized ? "›" : "−"}</button></div>
+        <div class="quick-prompts">${prompts.map(p => `<button class="prompt-chip" data-ai-prompt="${p}">${p}</button>`).join("")}</div>
+        <div class="chat"><div class="tiny">Consulta sobre este caso</div><div class="bubble">¿Qué ${key === "teoria" ? "normativa es aplicable al caso" : key === "canvas" ? "relaciones conviene contrastar" : "análisis fortalece este caso"}?</div><div class="bubble response">${DEMO_DATA.ai[key] || DEMO_DATA.ai.teoria}</div><div class="ai-cols"><div class="ai-mini"><strong>Normativa aplicable</strong>CP: arts. 188 y 189<br>CPP: arts. 159 y 160</div><div class="ai-mini"><strong>Teorías sugeridas</strong>Autoría directa<br>Apoderamiento</div><div class="ai-mini"><strong>Líneas de sustento</strong>Video, testimonio e incautación</div></div>${tall ? `<button class="btn ghost" data-toast="Análisis completo simulado." style="justify-self:center">Ver análisis completo ${icon("external")}</button>` : ""}</div>
+        <div class="ask"><input placeholder="Escribe tu consulta..."><button class="btn primary" data-ai-send>${icon("send")}</button></div>
+      </div>`;
     }
 
     function recentPanel(title) {
@@ -1684,6 +2101,28 @@
         if (ev.key === "Enter") simulateAi(input.closest(".ai-panel"));
       }));
       document.querySelectorAll("[data-ai-send]").forEach(el => el.addEventListener("click", () => simulateAi(el.closest(".ai-panel"))));
+      document.querySelectorAll("[data-ai-minimize]").forEach(el => el.addEventListener("click", ev => {
+        ev.stopPropagation();
+        state.ia.minimized = !state.ia.minimized;
+        localStorage.setItem("fcis.iaPanel", JSON.stringify(state.ia));
+        app();
+      }));
+      document.querySelectorAll("[data-ai-prompt]").forEach(el => el.addEventListener("click", () => {
+        const panel = el.closest(".ai-panel");
+        const input = panel?.querySelector(".ask input");
+        if (input) input.value = el.dataset.aiPrompt;
+        simulateAi(panel);
+      }));
+      initAiDrag();
+      initCanvasDrag();
+      document.querySelectorAll("[data-canvas-action]").forEach(el => el.addEventListener("click", () => simulateAction(`${el.dataset.canvasAction} simulado en canvas.`)));
+      document.querySelectorAll("[data-zoom]").forEach(el => el.addEventListener("click", () => {
+        const z = el.dataset.zoom;
+        state.canvasZoom = z === "fit" ? 1 : Math.min(1.35, Math.max(.75, state.canvasZoom + (z === "+" ? .1 : -.1)));
+        localStorage.setItem("fcis.canvasZoom", String(state.canvasZoom));
+        app();
+      }));
+      bindDynamicTables();
       document.querySelectorAll("[data-theory-index]").forEach(el => {
         el.addEventListener("click", ev => {
           if (ev.target.closest("[data-open-evidence]")) return;
@@ -1697,6 +2136,17 @@
             ev.preventDefault();
             el.click();
           }
+        });
+        el.addEventListener("dragstart", ev => {
+          if (matchMedia("(max-width: 720px)").matches) return ev.preventDefault();
+          ev.dataTransfer.setData("text/plain", el.dataset.theoryIndex);
+        });
+        el.addEventListener("dragover", ev => ev.preventDefault());
+        el.addEventListener("drop", ev => {
+          ev.preventDefault();
+          const from = Number(ev.dataTransfer.getData("text/plain"));
+          const to = Number(el.dataset.theoryIndex);
+          reorderTheory(from, to);
         });
       });
       document.querySelectorAll("[data-tour]").forEach(el => el.addEventListener("click", () => {
@@ -1719,9 +2169,14 @@
           ev.preventDefault();
           document.querySelector(".search input")?.focus();
         }
-        if (ev.key === "Escape" && (state.modal || state.drawer)) {
-          state.modal = false;
-          state.drawer = false;
+        if (ev.key === "Escape" && (state.modal || state.drawer || !state.ia.minimized)) {
+          if (state.modal || state.drawer) {
+            state.modal = false;
+            state.drawer = false;
+          } else {
+            state.ia.minimized = true;
+            localStorage.setItem("fcis.iaPanel", JSON.stringify(state.ia));
+          }
           app();
         }
         if (state.demoMode && state.screen === "teoria" && !["INPUT", "TEXTAREA", "SELECT"].includes(activeTag)) {
@@ -1739,6 +2194,124 @@
           }
         }
       };
+    }
+
+    function initCanvasDrag() {
+      if (matchMedia("(max-width: 720px)").matches) return;
+      document.querySelectorAll("[data-canvas-node]").forEach(node => {
+        node.addEventListener("pointerdown", ev => {
+          if (ev.button !== 0) return;
+          const id = node.dataset.canvasNode;
+          const base = canvasPos(canvasNodeById(id));
+          const start = { x: ev.clientX, y: ev.clientY, bx: base.x, by: base.y, moved: false };
+          node.setPointerCapture(ev.pointerId);
+          const move = e => {
+            const dx = (e.clientX - start.x) / canvasScale();
+            const dy = (e.clientY - start.y) / canvasScale();
+            if (Math.abs(dx) + Math.abs(dy) > 2) start.moved = true;
+            const x = Math.max(0, Math.min(810, start.bx + dx));
+            const y = Math.max(0, Math.min(545, start.by + dy));
+            state.canvasPositions[id] = { x, y };
+            node.style.left = `${x}px`;
+            node.style.top = `${y}px`;
+            updateCanvasSvg();
+          };
+          const up = () => {
+            node.removeEventListener("pointermove", move);
+            node.removeEventListener("pointerup", up);
+            localStorage.setItem("fcis.canvasPositions", JSON.stringify(state.canvasPositions));
+            if (!start.moved) {
+              state.selectedCanvasNode = id;
+              localStorage.setItem("fcis.selectedCanvasNode", id);
+              app();
+            }
+          };
+          node.addEventListener("pointermove", move);
+          node.addEventListener("pointerup", up);
+        });
+      });
+    }
+
+    function updateCanvasSvg() {
+      const svg = document.querySelector(".canvas-links");
+      if (svg) svg.outerHTML = canvasSvg();
+    }
+
+    function initAiDrag() {
+      if (matchMedia("(max-width: 720px)").matches) return;
+      document.querySelectorAll("[data-ai-handle]").forEach(handle => {
+        handle.addEventListener("pointerdown", ev => {
+          if (ev.target.closest("button")) return;
+          const panel = handle.closest(".ai-panel");
+          const start = { x: ev.clientX, y: ev.clientY, bx: state.ia.x || 0, by: state.ia.y || 0 };
+          panel.classList.add("dragging");
+          handle.setPointerCapture(ev.pointerId);
+          const move = e => {
+            state.ia.x = Math.max(-260, Math.min(260, start.bx + e.clientX - start.x));
+            state.ia.y = Math.max(-260, Math.min(260, start.by + e.clientY - start.y));
+            panel.style.setProperty("--ia-x", `${state.ia.x}px`);
+            panel.style.setProperty("--ia-y", `${state.ia.y}px`);
+          };
+          const up = () => {
+            panel.classList.remove("dragging");
+            handle.removeEventListener("pointermove", move);
+            handle.removeEventListener("pointerup", up);
+            localStorage.setItem("fcis.iaPanel", JSON.stringify(state.ia));
+          };
+          handle.addEventListener("pointermove", move);
+          handle.addEventListener("pointerup", up);
+        });
+      });
+    }
+
+    function bindDynamicTables() {
+      document.querySelectorAll("[data-table-search]").forEach(input => input.addEventListener("input", () => {
+        const id = input.dataset.tableSearch;
+        tableState(id).q = input.value;
+        tableState(id).page = 1;
+        saveTableState();
+        app();
+      }));
+      document.querySelectorAll("[data-table-filters]").forEach(group => group.querySelectorAll("select").forEach((select, idx) => {
+        select.addEventListener("change", () => {
+          const id = select.dataset.tableFilter;
+          const s = tableState(id);
+          s.filters = [...group.querySelectorAll("select")].map(x => x.value);
+          s.page = 1;
+          saveTableState();
+          app();
+        });
+      }));
+      document.querySelectorAll("[data-sort-table]").forEach(th => th.addEventListener("click", () => {
+        const s = tableState(th.dataset.sortTable);
+        const col = Number(th.dataset.sortCol);
+        s.dir = s.sort === col ? -(s.dir || 1) : 1;
+        s.sort = col;
+        saveTableState();
+        app();
+      }));
+      document.querySelectorAll("[data-table-page]").forEach(btn => btn.addEventListener("click", () => {
+        tableState(btn.dataset.tablePage).page = Number(btn.dataset.page);
+        saveTableState();
+        app();
+      }));
+    }
+
+    function saveTableState() {
+      localStorage.setItem("fcis.tableState", JSON.stringify(state.table));
+    }
+
+    function reorderTheory(from, to) {
+      const order = theoryDisplayOrder();
+      const a = order.indexOf(from);
+      const b = order.indexOf(to);
+      if (a < 0 || b < 0 || a === b) return;
+      order.splice(b, 0, order.splice(a, 1)[0]);
+      state.theoryOrder = order;
+      state.selectedTheory = from;
+      localStorage.setItem("fcis.theoryOrder", JSON.stringify(order));
+      simulateAction("Tarjeta reordenada en Teoría del Caso.");
+      app();
     }
 
     function toast(message) {
