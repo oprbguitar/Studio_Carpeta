@@ -1,50 +1,49 @@
-# Herramienta de Análisis Fiscal / FCIS — Demo estático
+# Biblioteca Fiscal Inteligente
 
-Demo preliminar de Fiscal Case Intelligence System (FCIS), una interfaz estática para gestión de casos, teoría del caso, jurisprudencia, normativa, historial y evidencias simuladas.
+Aplicación web estática para organizar fuentes, estudiar un expediente fiscal y simular análisis jurídico asistido por IA.
 
-## Página en GitHub Pages
-
-Abrir la demo publicada:
+## Página publicada
 
 https://oprbguitar.github.io/Studio_Carpeta/
 
-## Qué incluye
+## Funciones
 
-- Aplicación de una sola página en HTML, CSS y JavaScript puro.
-- Inicio, Gestión de casos, Teoría de Caso, Jurisprudencia, Normativa e Historial.
-- Paneles IA-Legal simulados, tablas, tarjetas, KPIs, acciones rápidas y popup de evidencias.
-- Datos ficticios para el caso MP-2024-01567 por Robo Agravado.
-- Exportación simulada de texto para algunos módulos.
-- Diseño responsive y compatible con GitHub Pages.
-- Sin backend, sin base de datos, sin API calls y sin dependencias externas.
+- Navegación sin recarga: Inicio, Biblioteca IA, Análisis del caso, Notas e Historial.
+- Carga local simulada de PDF, DOCX y TXT con metadatos persistentes.
+- Consultas IA-Legal y acciones analíticas simuladas.
+- Mapa del caso con nodos arrastrables y posiciones guardadas en `localStorage`.
+- Notas editables, búsqueda global, modal del caso e historial automático.
+- Escritorio compacto sin scroll de página y diseño móvil con navegación adaptada.
+- HTML, CSS y JavaScript puro; sin backend, API, base de datos ni dependencias externas.
+
+## Caso de demostración
+
+- Expediente: `MP-2024-01567`
+- Delito: Robo Agravado
+- Usuario: Doctor
 
 ## Uso local
 
-Abrir `index.html` directamente en el navegador.
-
-También se puede ejecutar:
+Puede abrirse directamente o servirse con cualquier servidor estático:
 
 ```bash
 python -m http.server 8000
 ```
 
-Y abrir:
+## Estructura principal
 
 ```text
-http://localhost:8000
+index.html
+css/styles.css
+js/image-assets.js
+js/app.js
+assets/favicon.svg
 ```
 
-## Estructura
+## Autor
 
-```text
-.
-├── index.html
-├── README.md
-├── assets/
-├── docs/
-└── reference-screens/
-```
+Elaborado por Pierre R.
 
-## Aviso legal
+Correo: peru.labs.pe@gmail.com
 
 © 2026 Pierre R. Todos los derechos reservados. Contacto: peru.labs.pe@gmail.com
