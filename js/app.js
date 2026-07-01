@@ -282,7 +282,7 @@ function renderMobileBar() {
 
 function renderApp() {
   const app = document.getElementById("app");
-  app.innerHTML = `<div class="app-shell">${renderSidebar()}<main class="main-shell">${renderTopbar()}<div class="content"><div class="mobile-notice">Para una mejor experiencia, se recomienda visualizar esta demo en modo web escritorio.</div>${renderSection(appState.activeSection)}</div></main>${renderMobileBar()}</div>`;
+  app.innerHTML = `<div class="app-shell">${renderSidebar()}<main class="main-shell">${renderTopbar()}<div class="content">${renderSection(appState.activeSection)}</div></main>${renderMobileBar()}</div>`;
   if (appState.activeSection === "analisis" && appState.activeWorkspacePanel === "map") initCaseMap();
   handleSearch(appState.searchQuery, false);
 }
@@ -298,19 +298,17 @@ function renderSection(sectionName) {
 function renderDashboard() {
   const hasPrimaryResult = Boolean(appState.lastAI?.answer || appState.isAnalyzing || appState.analysisError);
   return `<div class="dashboard-grid ${hasPrimaryResult ? "has-result" : ""}">
-    <div class="primary-column">
-      <section class="card library-card ${hasPrimaryResult ? "result-mode" : ""}">
-        <div class="library-head"><div class="library-title"><span class="round-icon">${icon("i-book")}</span><div><h2>Analizador jurídico-documental</h2><p>Organiza fuentes, profundiza en argumentos y estudia tu caso con apoyo inteligente.</p></div></div></div>
-        <img class="library-visual" src="${asset("study")}" alt="Libros jurídicos, lámpara y libro abierto">
-        ${renderDropZone()}
-        <form class="ai-question" id="ai-form"><label for="ai-input">${icon("i-ai")} Pregunta a la IA sobre tu caso o documento</label><div class="ai-row"><input id="ai-input" autocomplete="off" placeholder="Ej.: Resume el documento y señala riesgos jurídicos." value="" ${appState.isAnalyzing ? "disabled" : ""}><button class="send-btn" type="submit" aria-label="Enviar pregunta" ${appState.isAnalyzing ? "disabled" : ""}>${icon("i-open")}</button></div>${renderAIStatus()}</form>
-        ${renderPrimaryResultPanel()}
-        <div class="quick-actions">${quickActionButton("summary", "i-book", "Resumir expediente")}${quickActionButton("compare", "i-scale", "Comparar criterios")}${quickActionButton("evidence", "i-search", "Extraer evidencias")}${quickActionButton("map", "i-map", "Generar mapa del caso")}</div>
-        <div class="workspace-output" id="workspace-output">${renderWorkspaceOutput()}</div>
-      </section>
-      ${renderStudyRoute()}
-    </div>
-    <aside class="right-column">${renderCaseCard()}${renderReadingsCard()}${renderNotesCard()}</aside>
+    <section class="card library-card ${hasPrimaryResult ? "result-mode" : ""}">
+      <div class="library-head"><div class="library-title"><span class="round-icon">${icon("i-book")}</span><div><h2>Analizador jurídico-documental</h2><p>Organiza fuentes, profundiza en argumentos y estudia tu caso con apoyo inteligente.</p></div></div></div>
+      <img class="library-visual" src="${asset("study")}" alt="Libros jurídicos, lámpara y libro abierto">
+      ${renderDropZone()}
+      <form class="ai-question" id="ai-form"><label for="ai-input">${icon("i-ai")} Pregunta a la IA sobre tu caso o documento</label><div class="ai-row"><input id="ai-input" autocomplete="off" placeholder="Ej.: Resume el documento y señala riesgos jurídicos." value="" ${appState.isAnalyzing ? "disabled" : ""}><button class="send-btn" type="submit" aria-label="Enviar pregunta" ${appState.isAnalyzing ? "disabled" : ""}>${icon("i-open")}</button></div>${renderAIStatus()}</form>
+      ${renderPrimaryResultPanel()}
+      <div class="quick-actions">${quickActionButton("summary", "i-book", "Resumir expediente")}${quickActionButton("compare", "i-scale", "Comparar criterios")}${quickActionButton("evidence", "i-search", "Extraer evidencias")}${quickActionButton("map", "i-map", "Generar mapa del caso")}</div>
+      <div class="workspace-output" id="workspace-output">${renderWorkspaceOutput()}</div>
+    </section>
+    <aside class="right-column">${renderCaseCard()}<div class="support-panels">${renderReadingsCard()}${renderNotesCard()}</div></aside>
+    ${renderStudyRoute()}
   </div>`;
 }
 
@@ -471,7 +469,7 @@ async function handleAIQuestion(question) {
     const result = await askAI(clean);
     appState.lastAI = { question: clean, answer: result.answer, createdAt: Date.now(), documentWasTemporary: hadDocument };
     clearTemporaryDocument({ render: false });
-    appState.documentNotice = hadDocument ? "Documento analizado temporalmente. No fue almacenado." : "";
+    appState.documentNotice = "";
     appState.isAnalyzing = false;
     appState.activeWorkspacePanel = "ai";
     addHistoryEvent({ action: "Consulta a IA-Legal", section: "inicio", description: clean });
