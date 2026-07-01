@@ -1,6 +1,7 @@
 "use strict";
 
 const STORAGE_KEY = "bibliotecaFiscalInteligente.v1";
+const MODEL_STORAGE_KEY = "bibliotecaFiscalInteligente.aiModel";
 const DEFAULT_NOTES = [
   "Inconsistencias en cadena de custodia.",
   "Jurisprudencia favorable sobre testigos.",
@@ -46,7 +47,9 @@ const appState = {
   lastAI: null,
   activeReading: null,
   searchQuery: "",
-  sidebarOpen: false
+  sidebarOpen: false,
+  aiModels: [{ id: "openrouter/free", label: "openrouter/free" }],
+  selectedModel: localStorage.getItem(MODEL_STORAGE_KEY) || "openrouter/free"
 };
 
 const navItems = [
@@ -78,6 +81,7 @@ function loadState() {
     appState.history = Array.isArray(saved.history) ? saved.history : [];
     appState.uploadedFiles = Array.isArray(saved.uploadedFiles) ? saved.uploadedFiles : [];
     appState.caseMapNodes = Array.isArray(saved.caseMapNodes) && saved.caseMapNodes.length ? saved.caseMapNodes : DEFAULT_NODES.map(node => ({ ...node }));
+    appState.selectedModel = localStorage.getItem(MODEL_STORAGE_KEY) || saved.selectedModel || "openrouter/free";
   } catch (error) {
     console.warn("No se pudo recuperar la sesión local.", error);
   }
@@ -108,6 +112,63 @@ function showToast(message, type = "") {
   toast.textContent = message;
   region.append(toast);
   window.setTimeout(() => toast.remove(), 3200);
+}
+
+async function loadAIModels() {
+  try {
+    const response = await fetch("/api/models");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data?.error?.message || "No se pudieron cargar los modelos.");
+    const models = Array.isArray(data.models) ? data.models : [];
+    if (!models.length) throw new Error("No hay modelos gratuitos disponibles.");
+    appState.aiModels = models;
+    if (!models.some(model => model.id === appState.selectedModel)) {
+      appState.selectedModel = data.defaultModel || models[0].id;
+      localStorage.setItem(MODEL_STORAGE_KEY, appState.selectedModel);
+    }
+    renderApp();
+  } catch (error) {
+    showToast(error.message || "No se pudieron cargar los modelos gratuitos.", "warn");
+  }
+}
+
+function renderModelSelector(id) {
+  return `<select class="panel-input model-select" id="${id}" data-ai-model aria-label="Modelo gratuito de OpenRouter" title="Modelo gratuito de OpenRouter">${appState.aiModels.map(model => `<option value="${escapeHTML(model.id)}" ${model.id === appState.selectedModel ? "selected" : ""}>${escapeHTML(model.label || model.id)}</option>`).join("")}</select>`;
+}
+
+function buildAIContext() {
+  const files = appState.uploadedFiles.length
+    ? appState.uploadedFiles.map(file => `- ${file.name} (${file.typeLabel || "Documento"})`).join("\n")
+    : "No se ha cargado contenido documental verificable; solo hay nombres o datos demo.";
+  return [
+    `Caso activo: ${CASE_DATA.id}`,
+    `Delito o materia: ${CASE_DATA.crime}`,
+    `Etapa: ${CASE_DATA.stage}`,
+    `Sujetos procesales registrados: ${CASE_DATA.subjects}`,
+    `Pendientes: ${CASE_DATA.pending}`,
+    `Alertas: ${CASE_DATA.alerts}`,
+    `Documentos disponibles en la interfaz:\n${files}`
+  ].join("\n");
+}
+
+async function askAI(question) {
+  const response = await fetch("/api/ai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      question,
+      model: appState.selectedModel,
+      context: buildAIContext()
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = data?.error?.message || "No se pudo completar el análisis con IA.";
+    const error = new Error(message);
+    error.code = data?.error?.code;
+    throw error;
+  }
+  return data;
 }
 
 function setActiveNav(sectionName) {
@@ -178,7 +239,7 @@ function renderDashboard() {
         <div class="library-head"><div class="library-title"><span class="round-icon">${icon("i-book")}</span><div><h2>Biblioteca de análisis con IA</h2><p>Organiza fuentes, profundiza en argumentos y estudia tu caso con apoyo inteligente.</p></div></div></div>
         <img class="library-visual" src="${asset("study")}" alt="Libros jurídicos, lámpara y libro abierto">
         ${renderDropZone()}
-        <form class="ai-question" id="ai-form"><label for="ai-input">${icon("i-ai")} Pregunta a la IA sobre tu caso</label><div class="ai-row"><input id="ai-input" autocomplete="off" placeholder="Ej.: ¿Qué argumentos, contradicciones o normas debo revisar primero?" value=""><button class="send-btn" type="submit" aria-label="Enviar pregunta">${icon("i-open")}</button></div></form>
+        <form class="ai-question" id="ai-form"><label for="ai-input">${icon("i-ai")} Pregunta a la IA sobre tu caso</label><div class="ai-row"><input id="ai-input" autocomplete="off" placeholder="Ej.: ¿Qué argumentos, contradicciones o normas debo revisar primero?" value=""><button class="send-btn" type="submit" aria-label="Enviar pregunta">${icon("i-open")}</button></div><div style="margin-top:8px">${renderModelSelector("ai-model")}</div></form>
         <div class="quick-actions">${quickActionButton("summary", "i-book", "Resumir expediente")}${quickActionButton("compare", "i-scale", "Comparar criterios")}${quickActionButton("evidence", "i-search", "Extraer evidencias")}${quickActionButton("map", "i-map", "Generar mapa del caso")}</div>
         <div class="workspace-output" id="workspace-output">${renderWorkspaceOutput()}</div>
       </section>
@@ -200,7 +261,7 @@ function quickActionButton(action, iconName, label) {
 function renderWorkspaceOutput() {
   if (appState.activeWorkspacePanel === "dashboard" && !appState.lastAI) return `<div class="output-grid"><div class="output-item"><strong>Caso preparado</strong><p>MP-2024-01567 tiene 12 evidencias y 3 actuaciones pendientes.</p></div><div class="output-item"><strong>Foco sugerido</strong><p>Contrastar video, testimonio y acta de incautación.</p></div><div class="output-item"><strong>Normas clave</strong><p>Arts. 188 y 189 del Código Penal.</p></div><div class="output-item"><strong>Próximo hito</strong><p>Solicitud de formalización de investigación.</p></div></div>`;
   if (appState.activeWorkspacePanel === "typing") return `<div class="typing">Analizando el caso <i></i><i></i><i></i></div>`;
-  if (appState.activeWorkspacePanel === "ai" && appState.lastAI) return renderAnalyticalResponse(appState.lastAI.question);
+  if (appState.activeWorkspacePanel === "ai" && appState.lastAI) return renderAnalyticalResponse(appState.lastAI);
   if (appState.activeWorkspacePanel === "summary") return outputPanel(["Antecedentes|Investigación por robo agravado ocurrido en establecimiento comercial.", "Hechos relevantes|Amenaza con arma, sustracción y huida; existen registros audiovisuales.", "Estado procesal|Etapa de formalización con diligencias pendientes.", "Pendientes|Validar pericia, extracción celular y cadena de custodia."]);
   if (appState.activeWorkspacePanel === "compare") return outputPanel(["Jurisprudencia|Uso de arma y amenaza como agravantes con corroboración convergente.", "Doctrina|Apoderamiento y disponibilidad potencial del bien sustraído.", "Normativa|Código Penal 188-189 y CPP 159-160.", "Criterio aplicable|Corroboración periférica entre video, testimonio e incautación.", "Riesgo interpretativo|Debilidad en identificación o ruptura de custodia."]);
   if (appState.activeWorkspacePanel === "evidence") return outputPanel(["Documento|Acta de incautación y parte policial.", "Testimonio|Declaración de la víctima y testigos.", "Pericia|Extracción forense del celular recuperado.", "Cadena de custodia|Revisar continuidad y responsables.", "Contradicción|Diferencia horaria entre acta y metadatos.", "Observación crítica|Vincular cada hallazgo con un elemento del tipo penal."]);
@@ -216,14 +277,8 @@ function outputPanel(items) {
   return `<div class="output-grid">${items.map(item => { const [title, text] = item.split("|"); return `<div class="output-item"><strong>${title}</strong><p>${text}</p></div>`; }).join("")}</div>`;
 }
 
-function renderAnalyticalResponse() {
-  return outputPanel([
-    "1. Hechos a revisar|Hora exacta, secuencia de ingreso y correspondencia entre relatos.",
-    "2. Normativa probable|Arts. 188 y 189 del Código Penal; reglas de corroboración del CPP.",
-    "3. Evidencias sugeridas|Video original, extracción celular, acta y declaración de la víctima.",
-    "4. Riesgos o contradicciones|Cadena de custodia e identificación del investigado.",
-    "5. Próxima acción|Construir una matriz hecho-evidencia y validar metadatos."
-  ]);
+function renderAnalyticalResponse(result) {
+  return `<div class="output-item" data-searchable="${escapeHTML(result.answer || "")}"><strong>Respuesta IA · ${escapeHTML(result.model || appState.selectedModel)}</strong><p style="white-space:pre-wrap">${escapeHTML(result.answer || "No se obtuvo respuesta.")}</p></div>`;
 }
 
 function renderStudyRoute() {
@@ -257,7 +312,7 @@ function renderLibrarySection() {
 
 function renderAnalysisSection() {
   if (appState.activeWorkspacePanel === "map") return renderMapSection();
-  return `<section class="section-shell"><div class="section-header"><div><h2>Análisis del caso</h2><p>${CASE_DATA.id} · ${CASE_DATA.crime} · ${CASE_DATA.stage}</p></div><div class="section-tools"><button class="secondary-btn" data-action="simulate-save">Guardar análisis</button><button class="primary-btn" data-action="open-map">Mapa del caso</button></div></div><div class="section-body"><div class="card panel"><div class="panel-scroll"><div class="analysis-grid"><article class="analysis-card"><h3>Hechos</h3><p>El investigado habría ingresado armado al establecimiento, amenazado a la víctima y sustraído dinero y celulares.</p></article><article class="analysis-card"><h3>Teoría jurídica</h3><p>Apoderamiento ilegítimo mediante amenaza con arma, con ánimo de lucro y perjuicio patrimonial.</p></article><article class="analysis-card"><h3>Evidencias</h3><ul><li>Video de cámara</li><li>Extracción de celular</li><li>Acta de incautación</li><li>Declaración de la víctima</li></ul></article><article class="analysis-card"><h3>Puntos débiles</h3><ul><li>Cadena de custodia</li><li>Precisión de la identificación</li><li>Correspondencia de horarios</li></ul></article><button class="analysis-card map-launch" data-action="open-map"><h3>Mapa dinámico</h3><p>Relaciona hechos, sujetos, evidencias, normas, riesgos y acciones.</p></button><article class="analysis-card"><h3>Próximas acciones</h3><p>Validar metadatos, completar pericia y preparar solicitud de formalización.</p></article></div></div></div><aside class="card panel"><h3>Asistencia IA-Legal</h3><p style="font:12px/1.5 Arial,sans-serif;color:#5f6865">Selecciona un enfoque para profundizar el análisis.</p><div class="filter-row"><button class="prompt-chip" data-prompt="¿Qué contradicciones debo priorizar?">Contradicciones</button><button class="prompt-chip" data-prompt="¿Qué norma fortalece la imputación?">Normativa</button><button class="prompt-chip" data-prompt="¿Qué evidencia falta?">Evidencia faltante</button></div><form id="side-ai-form"><input class="panel-input" id="side-ai-input" placeholder="Pregunta sobre el caso"><button class="primary-btn" style="margin-top:8px;width:100%">Analizar</button></form><div id="side-ai-response" class="output-item" style="margin-top:10px"><strong>Lectura inicial</strong><p>La teoría presenta coherencia; conviene reforzar identificación y continuidad de custodia.</p></div></aside></div></section>`;
+  return `<section class="section-shell"><div class="section-header"><div><h2>Análisis del caso</h2><p>${CASE_DATA.id} · ${CASE_DATA.crime} · ${CASE_DATA.stage}</p></div><div class="section-tools"><button class="secondary-btn" data-action="simulate-save">Guardar análisis</button><button class="primary-btn" data-action="open-map">Mapa del caso</button></div></div><div class="section-body"><div class="card panel"><div class="panel-scroll"><div class="analysis-grid"><article class="analysis-card"><h3>Hechos</h3><p>El investigado habría ingresado armado al establecimiento, amenazado a la víctima y sustraído dinero y celulares.</p></article><article class="analysis-card"><h3>Teoría jurídica</h3><p>Apoderamiento ilegítimo mediante amenaza con arma, con ánimo de lucro y perjuicio patrimonial.</p></article><article class="analysis-card"><h3>Evidencias</h3><ul><li>Video de cámara</li><li>Extracción de celular</li><li>Acta de incautación</li><li>Declaración de la víctima</li></ul></article><article class="analysis-card"><h3>Puntos débiles</h3><ul><li>Cadena de custodia</li><li>Precisión de la identificación</li><li>Correspondencia de horarios</li></ul></article><button class="analysis-card map-launch" data-action="open-map"><h3>Mapa dinámico</h3><p>Relaciona hechos, sujetos, evidencias, normas, riesgos y acciones.</p></button><article class="analysis-card"><h3>Próximas acciones</h3><p>Validar metadatos, completar pericia y preparar solicitud de formalización.</p></article></div></div></div><aside class="card panel"><h3>Asistencia IA-Legal</h3><p style="font:12px/1.5 Arial,sans-serif;color:#5f6865">Selecciona un enfoque para profundizar el análisis.</p><div class="filter-row"><button class="prompt-chip" data-prompt="¿Qué contradicciones debo priorizar?">Contradicciones</button><button class="prompt-chip" data-prompt="¿Qué norma fortalece la imputación?">Normativa</button><button class="prompt-chip" data-prompt="¿Qué evidencia falta?">Evidencia faltante</button></div><form id="side-ai-form"><input class="panel-input" id="side-ai-input" placeholder="Pregunta sobre el caso"><div style="margin-top:8px">${renderModelSelector("side-ai-model")}</div><button class="primary-btn" style="margin-top:8px;width:100%">Analizar</button></form><div id="side-ai-response" class="output-item" style="margin-top:10px"><strong>Lectura inicial</strong><p>La teoría presenta coherencia; conviene reforzar identificación y continuidad de custodia.</p></div></aside></div></section>`;
 }
 
 function renderMapSection() {
@@ -295,19 +350,25 @@ function handleFileDrop(files) {
   renderApp();
 }
 
-function handleAIQuestion(question) {
+async function handleAIQuestion(question) {
   const clean = question.trim();
   if (!clean) return showToast("Escribe una pregunta para iniciar el análisis.", "warn");
   appState.activeWorkspacePanel = "typing";
   renderApp();
-  window.setTimeout(() => {
-    appState.lastAI = { question: clean, createdAt: Date.now() };
+  try {
+    const result = await askAI(clean);
+    appState.lastAI = { question: clean, answer: result.answer, model: result.model, createdAt: Date.now() };
     appState.activeWorkspacePanel = "ai";
     addHistoryEvent({ action: "Consulta a IA-Legal", section: "inicio", description: clean });
     saveState();
     renderApp();
-    showToast("Análisis simulado completado.", "success");
-  }, 850);
+    showToast("Análisis con IA completado.", "success");
+  } catch (error) {
+    appState.activeWorkspacePanel = "dashboard";
+    saveState();
+    renderApp();
+    showToast(error.message || "No se pudo completar el análisis con IA.", "warn");
+  }
 }
 
 function renderQuickAction(actionName) {
@@ -478,7 +539,7 @@ function bindEvents() {
     if (action === "clear-history") { appState.history = []; saveState(); renderApp(); showToast("Historial local limpiado."); }
   });
 
-  document.addEventListener("submit", event => {
+  document.addEventListener("submit", async event => {
     if (event.target.id === "ai-form") { event.preventDefault(); handleAIQuestion(document.getElementById("ai-input").value); }
     if (event.target.id === "side-ai-form") {
       event.preventDefault();
@@ -486,13 +547,25 @@ function bindEvents() {
       const response = document.getElementById("side-ai-response");
       if (!input.value.trim()) return showToast("Escribe una consulta.", "warn");
       response.innerHTML = `<div class="typing">Analizando <i></i><i></i><i></i></div>`;
-      window.setTimeout(() => { response.innerHTML = `<strong>Respuesta simulada</strong><p>Prioriza la correspondencia entre video, acta y testimonio. Los artículos 188 y 189 sostienen la calificación, siempre que la amenaza y el apoderamiento estén debidamente corroborados.</p>`; }, 700);
-      addHistoryEvent({ action: "Consulta en análisis", section: "analisis", description: input.value.trim() });
+      try {
+        const result = await askAI(input.value.trim());
+        response.innerHTML = `<strong>Respuesta IA · ${escapeHTML(result.model || appState.selectedModel)}</strong><p style="white-space:pre-wrap">${escapeHTML(result.answer)}</p>`;
+        addHistoryEvent({ action: "Consulta en análisis", section: "analisis", description: input.value.trim() });
+        showToast("Análisis con IA completado.", "success");
+      } catch (error) {
+        response.innerHTML = `<strong>No se pudo completar el análisis</strong><p>${escapeHTML(error.message || "Intenta nuevamente en unos minutos.")}</p>`;
+        showToast(error.message || "No se pudo completar el análisis con IA.", "warn");
+      }
     }
   });
 
   document.addEventListener("input", event => {
     if (event.target.id === "global-search") handleSearch(event.target.value);
+    if (event.target.matches("[data-ai-model]")) {
+      appState.selectedModel = event.target.value;
+      localStorage.setItem(MODEL_STORAGE_KEY, appState.selectedModel);
+      saveState();
+    }
     if (event.target.matches("[data-note-index]")) {
       appState.notes[Number(event.target.dataset.noteIndex)] = event.target.value;
       saveState();
@@ -500,6 +573,12 @@ function bindEvents() {
   });
 
   document.addEventListener("change", event => {
+    if (event.target.matches("[data-ai-model]")) {
+      appState.selectedModel = event.target.value;
+      localStorage.setItem(MODEL_STORAGE_KEY, appState.selectedModel);
+      saveState();
+      return;
+    }
     if (event.target.id === "file-input" || event.target.id === "library-file-input") handleFileDrop(event.target.files);
   });
 
@@ -527,6 +606,7 @@ function initApp() {
   loadState();
   bindEvents();
   renderApp();
+  loadAIModels();
 }
 
 window.initApp = initApp;
