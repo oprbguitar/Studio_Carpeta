@@ -39,7 +39,8 @@ const appState = {
   sourceSuggestions: [],
   savedAnalyses: [],
   activeSavedId: "",
-  notes: ""
+  notes: "",
+  aiConnectionWarning: ""
 };
 
 function $(selector) {
@@ -151,23 +152,43 @@ function truncateForDemo(text) {
 }
 
 async function askAI(mode, extra = {}) {
-  const response = await fetch("/api/ai", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      mode,
-      question: appState.question,
-      extractedDocumentText: appState.temporaryText,
-      currentAnalysis: appState.result,
-      currentCanvas: appState.canvas,
-      ...extra
-    })
-  });
+  let response;
+  try {
+    response = await fetch("/api/ai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode,
+        question: appState.question,
+        extractedDocumentText: appState.temporaryText,
+        currentAnalysis: appState.result,
+        currentCanvas: appState.canvas,
+        ...extra
+      })
+    });
+  } catch (error) {
+    const networkError = new Error("La interfaz está activa, pero la conexión IA no respondió en este momento. Intenta nuevamente en unos minutos.");
+    networkError.code = "network_error";
+    throw networkError;
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data?.error?.message || "No se pudo completar el análisis.");
+    const error = new Error(formatAIError(data?.error));
+    error.code = data?.error?.code || "ai_request_failed";
+    throw error;
   }
+  appState.aiConnectionWarning = "";
   return normalizeAIResponse(data);
+}
+
+function formatAIError(error) {
+  if (error?.code === "missing_api_key") {
+    return "La interfaz está activa, pero falta configurar la conexión IA en Vercel.";
+  }
+  if (error?.code === "provider_unavailable" || error?.code === "provider_error" || error?.code === "quota_exceeded") {
+    return "La interfaz está activa, pero la conexión IA no respondió en este momento. Intenta nuevamente en unos minutos.";
+  }
+  return error?.message || "No se pudo completar el análisis.";
 }
 
 function parseJsonLike(value) {
@@ -260,6 +281,7 @@ async function handleFile(files) {
     appState.isBusy = false;
     appState.status = "";
     appState.error = error.message || "No se pudo leer el documento.";
+    if (error.code) appState.aiConnectionWarning = appState.error;
     clearFileInput();
     renderApp();
     showToast(appState.error, "warn");
@@ -289,6 +311,7 @@ async function runFocused(mode) {
     appState.isBusy = false;
     appState.status = "";
     appState.error = error.message || "No se pudo completar la acción.";
+    if (error.code) appState.aiConnectionWarning = appState.error;
     renderApp();
   }
 }
@@ -306,6 +329,7 @@ function resetCurrent({ keepSaved = true } = {}) {
   appState.sourceSuggestions = [];
   appState.notes = "";
   appState.activeSavedId = "";
+  appState.aiConnectionWarning = "";
   if (!keepSaved) appState.savedAnalyses = [];
 }
 
@@ -376,23 +400,130 @@ function exportAnalysis() {
   URL.revokeObjectURL(link.href);
 }
 
+function exportTextReport() {
+  if (!appState.result) return showToast("No hay análisis para exportar.", "warn");
+  const sections = [
+    "STUDIO CARPETA - INFORME DOCUMENTAL",
+    "",
+    `Archivo: ${appState.fileName || "Sin nombre registrado"}`,
+    `Clasificación: ${appState.result.classificationLabel}`,
+    `Fecha: ${new Date().toLocaleString("es-PE")}`,
+    "",
+    "RESULTADO DEL ANÁLISIS",
+    appState.result.analysis || "",
+    "",
+    appState.canvas ? "CANVAS SIMPLE DE TEORÍA DEL CASO" : "",
+    appState.canvas ? canvasToText(appState.canvas) : "",
+    "",
+    "FUENTES OFICIALES DONDE VERIFICAR",
+    normalizeSources(appState.sourceSuggestions).map(source => `- ${source.label}${source.url ? `: ${source.url}` : ""}`).join("\n"),
+    "",
+    "LIMITACIONES",
+    "La IA no reemplaza criterio legal. Las fuentes sugeridas deben verificarse oficialmente."
+  ].filter(section => section !== "").join("\n");
+  const blob = new Blob([sections], { type: "text/plain;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "studio-carpeta-informe.txt";
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function canvasToText(canvas) {
+  const rows = [
+    ["Hechos clave", canvas.keyFacts],
+    ["Sujetos/partes", canvas.parties],
+    ["Problema central", canvas.centralProblem],
+    ["Evidencias mencionadas", canvas.evidence],
+    ["Riesgos o vacíos", canvas.risks],
+    ["Hipótesis de trabajo", canvas.workingTheory],
+    ["Próximo paso", canvas.nextStep]
+  ];
+  return rows.map(([label, value]) => `${label}:\n${Array.isArray(value) ? value.join("\n") : value || "Sin información"}`).join("\n\n");
+}
+
+async function copyResult() {
+  if (!appState.result?.analysis) return showToast("No hay resultado para copiar.", "warn");
+  try {
+    await navigator.clipboard.writeText(appState.result.analysis);
+    showToast("Resultado copiado.", "success");
+  } catch (error) {
+    showToast("No se pudo copiar automáticamente.", "warn");
+  }
+}
+
 function renderApp() {
   const app = $("#app");
   app.innerHTML = `<main class="app-shell">
     <section class="hero-card">
-      <div class="hero-copy">
-        <p class="eyebrow">Asistente legal y documental</p>
-        <h1>Analizador jurídico-documental</h1>
-        <p>Sube un documento y el sistema lo clasificará antes de analizarlo.</p>
-      </div>
+      ${renderHero()}
+      ${renderProcessStrip()}
+      ${renderFunctionalStatus()}
       ${renderUploader()}
       ${renderProgressOrError()}
       ${renderResult()}
-      ${renderActions()}
       ${renderSources()}
+      ${renderActions()}
       ${renderPersistence()}
     </section>
   </main>`;
+}
+
+function renderHero() {
+  return `<header class="hero-layout">
+    <div class="hero-copy">
+      <p class="eyebrow">Asistente legal y documental</p>
+      <h1>Analizador jurídico-documental</h1>
+      <p>Sube un documento legal, administrativo o de referencia. La IA lo clasifica, resume y señala riesgos documentales sin reemplazar tu criterio legal.</p>
+    </div>
+    <div class="legal-visual" aria-hidden="true">
+      <svg viewBox="0 0 420 280" role="img">
+        <defs>
+          <linearGradient id="folderGrad" x1="0" x2="1">
+            <stop offset="0" stop-color="#edf2e8"/>
+            <stop offset="1" stop-color="#fff9ef"/>
+          </linearGradient>
+        </defs>
+        <rect x="38" y="82" width="310" height="162" rx="18" fill="url(#folderGrad)" stroke="#d7c6ad" stroke-width="2"/>
+        <path d="M58 82h96l25 25h169" fill="#f8eedc" stroke="#d7c6ad" stroke-width="2"/>
+        <rect x="82" y="52" width="154" height="184" rx="12" fill="#fffdf9" stroke="#dfd2bf" stroke-width="2"/>
+        <line x1="108" y1="94" x2="205" y2="94" stroke="#287b82" stroke-width="5" stroke-linecap="round"/>
+        <line x1="108" y1="124" x2="198" y2="124" stroke="#b9ad9d" stroke-width="4" stroke-linecap="round"/>
+        <line x1="108" y1="150" x2="214" y2="150" stroke="#b9ad9d" stroke-width="4" stroke-linecap="round"/>
+        <line x1="108" y1="176" x2="184" y2="176" stroke="#b9ad9d" stroke-width="4" stroke-linecap="round"/>
+        <circle cx="306" cy="121" r="38" fill="#f0eaf7" stroke="#cdbbe2" stroke-width="2"/>
+        <path d="M306 78v92M267 103h78M282 103l-22 45h44l-22-45M330 103l-22 45h44l-22-45" fill="none" stroke="#7658a8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="244" y="186" width="104" height="34" rx="17" fill="#287b82"/>
+        <circle cx="268" cy="203" r="6" fill="#fffdf9"/>
+        <circle cx="296" cy="203" r="6" fill="#fffdf9"/>
+        <circle cx="324" cy="203" r="6" fill="#fffdf9"/>
+      </svg>
+    </div>
+  </header>`;
+}
+
+function renderProcessStrip() {
+  const steps = ["Subir documento", "Clasificar contenido", "Analizar riesgos", "Construir teoría/canvas si corresponde", "Guardar o exportar"];
+  return `<section class="process-strip" aria-label="Flujo de trabajo">${steps.map((step, index) => `<div><span>${index + 1}</span><strong>${step}</strong></div>`).join("")}</section>`;
+}
+
+function renderFunctionalStatus() {
+  const warning = appState.aiConnectionWarning || (appState.error && appState.error.includes("conexión IA") ? appState.error : "");
+  const chips = [
+    ["PDF text reader", true],
+    ["DOCX reader", true],
+    ["AI analysis", !warning],
+    ["Local save", true],
+    ["Official source suggestions", true]
+  ];
+  return `<section class="status-panel">
+    <div>
+      <h2>Estado funcional</h2>
+      <p>Lectura local del documento, análisis asistido y guardado en este navegador.</p>
+    </div>
+    <div class="status-chips">${chips.map(([label, ok]) => `<span class="${ok ? "ok" : "warn"}">${escapeHTML(label)}</span>`).join("")}</div>
+    ${warning ? `<p class="ai-warning">${escapeHTML(warning)}</p>` : ""}
+  </section>`;
 }
 
 function renderUploader() {
@@ -411,6 +542,7 @@ function renderUploader() {
       <button class="primary-btn" data-action="analyze" ${disabled || !appState.temporaryText ? "disabled" : ""}>Analizar documento</button>
     </div>
     <p class="privacy-note">Modo demo: el archivo no se almacena. Solo se guarda el análisis si presionas Guardar.</p>
+    <p class="helper-note">La IA no reemplaza criterio legal; organiza, resume y señala riesgos documentales. Las fuentes sugeridas deben verificarse oficialmente.</p>
     ${appState.textWasTruncated ? `<p class="notice">El documento fue recortado para esta demo. Se analizó la parte inicial más relevante.</p>` : ""}
   </section>`;
 }
@@ -420,14 +552,17 @@ function renderProgressOrError() {
     return `<section class="state-card" aria-live="polite"><h2>${escapeHTML(appState.status || "Procesando...")}</h2><p>Esto suele tardar unos segundos.</p><div class="loading-bar"><span></span></div></section>`;
   }
   if (appState.error) {
-    return `<section class="state-card error-card"><h2>No se pudo analizar</h2><p>${escapeHTML(appState.error)}</p><ul><li>Sube PDF con texto seleccionable.</li><li>Sube DOCX o TXT.</li><li>Copia y pega el contenido principal en un archivo TXT.</li><li>Reduce el archivo si es demasiado grande.</li></ul></section>`;
+    return `<section class="state-card error-card"><h2>No se pudo analizar</h2><p>${escapeHTML(appState.error)}</p><ul><li>Sube PDF con texto seleccionable.</li><li>Sube DOCX o TXT.</li><li>Copia y pega el contenido principal en un archivo TXT.</li><li>Reduce el archivo si es demasiado grande.</li></ul><button class="secondary-btn" data-action="clear">Limpiar e intentar de nuevo</button></section>`;
   }
   return "";
 }
 
 function renderResult() {
   if (!appState.result) {
-    return `<section class="empty-card"><h2>No hay caso activo.</h2><p>Sube un documento para iniciar. La app no usa casos ficticios ni números simulados.</p></section>`;
+    return `<section class="info-grid">
+      <article class="empty-card"><h2>No hay caso activo.</h2><p>Sube un documento para iniciar. La app no usa casos ficticios ni números simulados.</p></article>
+      <article class="capability-card"><h2>Qué puede hacer esta herramienta</h2><ul><li>Clasificar documentos.</li><li>Resumir contenido.</li><li>Detectar riesgos.</li><li>Extraer hechos.</li><li>Sugerir fuentes oficiales para verificar.</li><li>Construir canvas si parece caso.</li></ul></article>
+    </section>`;
   }
   return `<section class="result-card">
     <div class="classification-card">
@@ -456,6 +591,7 @@ function renderSuggestedActions() {
       ${appState.result?.classification === "legal_case" && !appState.canvas ? `<button class="secondary-btn" data-mode="build_case_canvas">Crear teoría del caso</button>` : ""}
       ${canConvert ? `<button class="secondary-btn" data-mode="build_case_canvas">Convertir en caso</button>` : ""}
       <button class="secondary-btn" data-mode="source_verification_suggestions">Ver fuentes para verificar</button>
+      <button class="secondary-btn" data-mode="export_summary">Generar resumen ejecutivo</button>
     </div>
   </section>`;
 }
@@ -480,9 +616,11 @@ function renderCanvas() {
 function renderActions() {
   if (!appState.result) return "";
   return `<section class="save-actions">
+    <button class="secondary-btn" data-action="copy">Copiar resultado</button>
     <button class="primary-btn" data-action="save">Guardar análisis</button>
     <button class="secondary-btn" data-action="clear">Limpiar</button>
-    <button class="secondary-btn" data-action="export">Exportar</button>
+    <button class="secondary-btn" data-action="export">Exportar JSON</button>
+    <button class="secondary-btn" data-action="export-txt">Exportar informe TXT</button>
   </section>`;
 }
 
@@ -538,6 +676,8 @@ function bindEvents() {
     if (action === "save") saveAnalysis();
     if (action === "clear") { resetCurrent({ keepSaved: true }); clearFileInput(); renderApp(); }
     if (action === "export") exportAnalysis();
+    if (action === "export-txt") exportTextReport();
+    if (action === "copy") copyResult();
     if (action === "delete-saved") deleteActiveSaved();
   });
 
