@@ -53,7 +53,8 @@ const appState = {
   temporaryDocument: null,
   documentStatus: "idle",
   documentNotice: "",
-  isAnalyzing: false
+  isAnalyzing: false,
+  analysisError: ""
 };
 
 const navItems = [
@@ -90,6 +91,7 @@ function loadState() {
     appState.documentStatus = "idle";
     appState.documentNotice = "";
     appState.isAnalyzing = false;
+    appState.analysisError = "";
     appState.lastAI = null;
     delete appState.aiModels;
     delete appState.selectedModel;
@@ -100,7 +102,7 @@ function loadState() {
 }
 
 function saveState() {
-  const { temporaryDocument, documentStatus, documentNotice, isAnalyzing, uploadedFiles, lastAI, aiModels, selectedModel, ...persistable } = appState;
+  const { temporaryDocument, documentStatus, documentNotice, isAnalyzing, analysisError, uploadedFiles, lastAI, aiModels, selectedModel, ...persistable } = appState;
   const snapshot = { ...persistable, sidebarOpen: false, uploadedFiles: [], lastAI: null };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
 }
@@ -294,13 +296,15 @@ function renderSection(sectionName) {
 }
 
 function renderDashboard() {
-  return `<div class="dashboard-grid">
+  const hasPrimaryResult = Boolean(appState.lastAI?.answer || appState.isAnalyzing || appState.analysisError);
+  return `<div class="dashboard-grid ${hasPrimaryResult ? "has-result" : ""}">
     <div class="primary-column">
-      <section class="card library-card">
+      <section class="card library-card ${hasPrimaryResult ? "result-mode" : ""}">
         <div class="library-head"><div class="library-title"><span class="round-icon">${icon("i-book")}</span><div><h2>Analizador jurídico-documental</h2><p>Organiza fuentes, profundiza en argumentos y estudia tu caso con apoyo inteligente.</p></div></div></div>
         <img class="library-visual" src="${asset("study")}" alt="Libros jurídicos, lámpara y libro abierto">
         ${renderDropZone()}
         <form class="ai-question" id="ai-form"><label for="ai-input">${icon("i-ai")} Pregunta a la IA sobre tu caso o documento</label><div class="ai-row"><input id="ai-input" autocomplete="off" placeholder="Ej.: Resume el documento y señala riesgos jurídicos." value="" ${appState.isAnalyzing ? "disabled" : ""}><button class="send-btn" type="submit" aria-label="Enviar pregunta" ${appState.isAnalyzing ? "disabled" : ""}>${icon("i-open")}</button></div>${renderAIStatus()}</form>
+        ${renderPrimaryResultPanel()}
         <div class="quick-actions">${quickActionButton("summary", "i-book", "Resumir expediente")}${quickActionButton("compare", "i-scale", "Comparar criterios")}${quickActionButton("evidence", "i-search", "Extraer evidencias")}${quickActionButton("map", "i-map", "Generar mapa del caso")}</div>
         <div class="workspace-output" id="workspace-output">${renderWorkspaceOutput()}</div>
       </section>
@@ -320,11 +324,23 @@ function renderAIStatus() {
   return `<div class="ai-status-row"><span>${escapeHTML(statusText)}</span><small>Modo demo gratuito</small></div>`;
 }
 
+function renderPrimaryResultPanel() {
+  if (appState.isAnalyzing) {
+    return `<section class="analysis-result-card loading-result" aria-live="polite"><div class="result-title-row"><div><h2>Analizando documento...</h2><p>Esto puede tardar unos segundos.</p></div></div><div class="typing large-typing">Procesando la consulta <i></i><i></i><i></i></div></section>`;
+  }
+  if (appState.analysisError) {
+    return `<section class="analysis-result-card error-result" aria-live="polite"><div class="result-title-row"><div><h2>Resultado del análisis</h2><p>No se pudo completar el análisis.</p></div><div class="answer-actions"><button class="secondary-btn compact-btn" data-action="clear-analysis" type="button">Limpiar análisis</button><button class="secondary-btn compact-btn" data-action="new-analysis" type="button">Nuevo análisis</button></div></div><p class="result-content">${escapeHTML(appState.analysisError)}</p></section>`;
+  }
+  if (appState.lastAI?.answer) return renderAnalyticalResponse(appState.lastAI);
+  return "";
+}
+
 function quickActionButton(action, iconName, label) {
   return `<button class="action-btn" data-quick-action="${action}">${icon(iconName)}<span>${label}</span></button>`;
 }
 
 function renderWorkspaceOutput() {
+  if (appState.lastAI?.answer || appState.isAnalyzing || appState.analysisError) return "";
   if (appState.activeWorkspacePanel === "dashboard" && !appState.lastAI) return `<div class="output-grid"><div class="output-item"><strong>Caso preparado</strong><p>MP-2024-01567 tiene 12 evidencias y 3 actuaciones pendientes.</p></div><div class="output-item"><strong>Foco sugerido</strong><p>Contrastar video, testimonio y acta de incautación.</p></div><div class="output-item"><strong>Normas clave</strong><p>Arts. 188 y 189 del Código Penal.</p></div><div class="output-item"><strong>Próximo hito</strong><p>Solicitud de formalización de investigación.</p></div></div>`;
   if (appState.activeWorkspacePanel === "typing") return `<div class="typing">Analizando el caso <i></i><i></i><i></i></div>`;
   if (appState.activeWorkspacePanel === "ai" && appState.lastAI) return renderAnalyticalResponse(appState.lastAI);
@@ -344,7 +360,7 @@ function outputPanel(items) {
 }
 
 function renderAnalyticalResponse(result) {
-  return `<div class="output-item answer-card" data-searchable="${escapeHTML(result.answer || "")}"><div class="answer-head"><strong>Respuesta IA</strong><div class="answer-actions"><button class="secondary-btn compact-btn" data-action="copy-answer" type="button">Copiar respuesta</button><button class="secondary-btn compact-btn" data-action="clear-analysis" type="button">Limpiar análisis</button></div></div><p style="white-space:pre-wrap">${escapeHTML(result.answer || "No se obtuvo respuesta.")}</p>${result.documentWasTemporary ? `<small class="privacy-note">Documento analizado temporalmente. No fue almacenado.</small>` : ""}</div>`;
+  return `<section class="analysis-result-card answer-card" data-searchable="${escapeHTML(result.answer || "")}"><div class="result-title-row"><div><h2>Resultado del análisis</h2><p>Documento procesado temporalmente. No fue almacenado.</p></div><div class="answer-actions"><button class="secondary-btn compact-btn" data-action="copy-answer" type="button">Copiar resultado</button><button class="secondary-btn compact-btn" data-action="clear-analysis" type="button">Limpiar análisis</button><button class="secondary-btn compact-btn" data-action="new-analysis" type="button">Nuevo análisis</button></div></div><div class="result-content">${escapeHTML(result.answer || "No se obtuvo respuesta.")}</div></section>`;
 }
 
 function renderStudyRoute() {
@@ -448,6 +464,7 @@ async function handleAIQuestion(question) {
   const hadDocument = Boolean(appState.temporaryDocument?.text);
   if (hadDocument) appState.documentNotice = "Analizando documento...";
   appState.isAnalyzing = true;
+  appState.analysisError = "";
   appState.activeWorkspacePanel = "typing";
   renderApp();
   try {
@@ -463,6 +480,7 @@ async function handleAIQuestion(question) {
     showToast("Análisis con IA completado.", "success");
   } catch (error) {
     appState.isAnalyzing = false;
+    appState.analysisError = error.message || "No se pudo completar el análisis con IA.";
     appState.activeWorkspacePanel = "dashboard";
     saveState();
     renderApp();
@@ -637,7 +655,8 @@ function bindEvents() {
     if (action === "reset-map") resetCaseMap();
     if (action === "clear-history") { appState.history = []; saveState(); renderApp(); showToast("Historial local limpiado."); }
     if (action === "clear-document") { clearTemporaryDocument(); showToast("Documento temporal limpiado."); }
-    if (action === "clear-analysis") { appState.lastAI = null; appState.activeWorkspacePanel = "dashboard"; saveState(); renderApp(); showToast("Análisis limpiado."); }
+    if (action === "clear-analysis") { appState.lastAI = null; appState.analysisError = ""; appState.documentNotice = ""; appState.activeWorkspacePanel = "dashboard"; saveState(); renderApp(); showToast("Análisis limpiado."); }
+    if (action === "new-analysis") { appState.lastAI = null; appState.analysisError = ""; appState.documentNotice = ""; appState.activeWorkspacePanel = "dashboard"; saveState(); renderApp(); document.getElementById("ai-input")?.focus(); }
     if (action === "copy-answer") {
       const answer = appState.lastAI?.answer || "";
       if (!answer) return showToast("No hay respuesta para copiar.", "warn");
@@ -656,6 +675,7 @@ function bindEvents() {
       if (appState.isAnalyzing) return showToast("El análisis ya está en curso.", "warn");
       const hadDocument = Boolean(appState.temporaryDocument?.text);
       appState.isAnalyzing = true;
+      appState.analysisError = "";
       response.innerHTML = `<div class="typing">Analizando <i></i><i></i><i></i></div>`;
       try {
         const result = await askAI(input.value.trim());
