@@ -7,18 +7,68 @@ const DEFAULT_ALLOWED_MODELS = [
   "qwen/qwen3.6-plus-preview:free"
 ];
 
-const SYSTEM_PROMPT = `Eres un asistente peruano de análisis legal, fiscal y documental.
-Trabajas con derecho peruano, investigación fiscal, expedientes, documentos y estrategia probatoria.
-No inventes leyes, jurisprudencia, fechas, instituciones, hechos ni contenido documental.
-Si falta información o no puedes verificar algo con el contexto entregado, dilo claramente.
-No des por existente ningun documento, prueba, norma, sentencia o dato que no este en la consulta o en el contexto.
-Responde siempre en español claro y profesional, con esta estructura exacta:
+const MODE_DEFINITIONS = {
+  default_document_analysis: {
+    label: "Análisis automático",
+    instruction: `Analiza el documento cargado de forma general. Responde con esta estructura exacta:
 1. Resumen ejecutivo
-2. Contenido relevante del documento
-3. Análisis jurídico/documental
-4. Riesgos, contradicciones o vacíos
-5. Próxima acción recomendada
-6. Limitaciones del análisis`;
+2. Hechos relevantes
+3. Sujetos o partes mencionadas
+4. Problema jurídico/documental
+5. Evidencias o documentos relevantes
+6. Riesgos, contradicciones o vacíos
+7. Próxima acción recomendada
+8. Limitaciones del análisis`
+  },
+  case_theory_canvas: {
+    label: "Generar teoría del caso",
+    instruction: `Construye un Canvas de teoría del caso a partir del documento. Devuelve SOLO JSON válido, sin markdown, con esta forma:
+{
+  "caseTitle": "",
+  "summary": "",
+  "facts": [],
+  "subjects": [],
+  "timeline": [],
+  "mainTheory": "",
+  "alternativeTheory": "",
+  "evidence": [],
+  "elementsToProve": [],
+  "risks": [],
+  "missingInformation": [],
+  "nextActions": [],
+  "followUpQuestions": []
+}`
+  },
+  extract_facts: {
+    label: "Extraer hechos",
+    instruction: "Extrae hechos y eventos relevantes en orden cronológico cuando sea posible. Distingue contenido del documento de inferencias."
+  },
+  extract_evidence: {
+    label: "Extraer evidencias",
+    instruction: "Identifica evidencias, documentos, declaraciones, fechas, referencias y soportes mencionados en el texto."
+  },
+  find_risks: {
+    label: "Detectar riesgos",
+    instruction: "Detecta contradicciones, vacíos, información faltante, debilidades documentales y riesgos procesales o probatorios."
+  },
+  next_actions: {
+    label: "Próximas acciones",
+    instruction: "Propón siguientes acciones documentales, procesales o investigativas. Marca como referencia a verificar cualquier consecuencia legal incierta."
+  },
+  executive_summary: {
+    label: "Resumen ejecutivo",
+    instruction: "Genera un resumen ejecutivo formal, breve y claro, apto para revisión fiscal o documental."
+  }
+};
+
+const SYSTEM_PROMPT = `Eres un asistente peruano de análisis legal, fiscal y documental.
+Trabajas solo con información aportada por el usuario o extraída del documento cargado.
+No inventes leyes, jurisprudencia, fechas, instituciones, hechos ni contenido documental.
+Debes distinguir contenido documental de interpretación.
+Si una norma, plazo o consecuencia legal es incierta, etiquétala como "referencia a verificar".
+Si falta información, indica qué falta.
+Si el documento no menciona algo, di que no fue encontrado en el texto cargado.
+No brindes asesoría legal definitiva; brinda apoyo documental, procesal y analítico.`;
 
 function parseAllowedModels() {
   const configured = (process.env.AI_ALLOWED_MODELS || "")
@@ -95,10 +145,13 @@ module.exports = async function handler(req, res) {
     return sendError(res, 400, "invalid_json", "El cuerpo de la solicitud no es JSON valido.");
   }
 
-  const question = typeof body.question === "string" ? body.question.trim() : "";
-  if (!question) {
-    return sendError(res, 400, "empty_question", "Escribe una pregunta para iniciar el analisis.");
+  const mode = typeof body.mode === "string" && body.mode.trim() ? body.mode.trim() : "default_document_analysis";
+  const modeDefinition = MODE_DEFINITIONS[mode];
+  if (!modeDefinition) {
+    return sendError(res, 400, "unsupported_mode", "Modo de análisis no compatible.");
   }
+
+  const question = typeof body.question === "string" ? body.question.trim() : "";
 
   const allowedModels = parseAllowedModels();
   const defaultModel = process.env.AI_MODEL_DEFAULT || "openrouter/free";
@@ -111,7 +164,7 @@ module.exports = async function handler(req, res) {
   const requestedModel = allowedModels.includes(defaultModel) ? defaultModel : allowedModels[0] || "openrouter/free";
 
   const baseUrl = process.env.AI_BASE_URL || "https://openrouter.ai/api/v1";
-  const maxTokens = Number.parseInt(process.env.AI_MAX_TOKENS || "900", 10);
+  const maxTokens = Number.parseInt(process.env.AI_MAX_TOKENS || "1200", 10);
   const context = typeof body.context === "string" ? body.context.trim().slice(0, 4000) : "";
   const extractedDocumentText = typeof body.extractedDocumentText === "string"
     ? body.extractedDocumentText.trim().slice(0, 20000)
@@ -122,13 +175,25 @@ module.exports = async function handler(req, res) {
   const notes = Array.isArray(body.notes)
     ? body.notes.filter(note => typeof note === "string" && note.trim()).slice(0, 20).join("\n- ").slice(0, 3000)
     : "";
+  const currentCanvas = body.currentCanvas && typeof body.currentCanvas === "object"
+    ? JSON.stringify(body.currentCanvas).slice(0, 6000)
+    : "";
+  const caseId = typeof body.caseId === "string" ? body.caseId.trim().slice(0, 160) : "";
+
+  if (!question && !extractedDocumentText && !currentCanvas) {
+    return sendError(res, 400, "empty_question", "Agrega un documento o una pregunta para iniciar el análisis.");
+  }
 
   const userContent = [
+    `Modo solicitado: ${modeDefinition.label}`,
+    `Instrucción interna:\n${modeDefinition.instruction}`,
+    caseId ? `Caso/asunto:\n${caseId}` : "",
     context ? `Contexto disponible:\n${context}` : "",
     caseData ? `Datos del caso:\n${caseData}` : "",
     notes ? `Notas disponibles:\n- ${notes}` : "",
+    currentCanvas ? `Canvas actual editable:\n${currentCanvas}` : "",
     extractedDocumentText ? `Texto extraído del documento temporal:\n${extractedDocumentText}` : "No se adjuntó texto documental legible en esta consulta.",
-    `Pregunta:\n${question}`
+    question ? `Pregunta adicional del usuario:\n${question}` : ""
   ].filter(Boolean).join("\n\n");
 
   try {
@@ -147,7 +212,7 @@ module.exports = async function handler(req, res) {
           { role: "user", content: userContent }
         ],
         temperature: 0.2,
-        max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : 900
+        max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : 1200
       })
     });
 

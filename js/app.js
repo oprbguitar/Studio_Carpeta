@@ -4,6 +4,31 @@ const STORAGE_KEY = "bibliotecaFiscalInteligente.v1";
 const MAX_FILE_SIZE = 4 * 1024 * 1024;
 const MAX_EXTRACTED_TEXT = 20000;
 const SUPPORTED_EXTENSIONS = ["txt", "pdf", "docx", "csv"];
+const SAVED_CASES_KEY = "bibliotecaFiscalInteligente.savedCases.v1";
+const PROMPT_MODES = {
+  extract_facts: "Extraer hechos",
+  extract_evidence: "Extraer evidencias",
+  find_risks: "Detectar riesgos",
+  next_actions: "Próximas acciones",
+  executive_summary: "Resumen ejecutivo"
+};
+const EMPTY_CANVAS = {
+  caseTitle: "",
+  summary: "",
+  facts: [],
+  subjects: [],
+  timeline: [],
+  mainTheory: "",
+  alternativeTheory: "",
+  evidence: [],
+  elementsToProve: [],
+  risks: [],
+  missingInformation: [],
+  nextActions: [],
+  followUpQuestions: [],
+  freeText: "",
+  parseWarning: ""
+};
 const DEFAULT_NOTES = [
   "Inconsistencias en cadena de custodia.",
   "Jurisprudencia favorable sobre testigos.",
@@ -17,12 +42,6 @@ const DEFAULT_NODES = [
   { id: "norma", type: "rule", label: "Norma", detail: "Código Penal, artículos 188 y 189.", x: 14, y: 62 },
   { id: "riesgo", type: "risk", label: "Riesgo", detail: "Cuestionamiento de identificación y cadena de custodia.", x: 43, y: 58 },
   { id: "accion", type: "action", label: "Acción", detail: "Validar pericia y preparar solicitud de formalización.", x: 72, y: 64 }
-];
-
-const SUGGESTED_READINGS = [
-  { id: "jurisprudencia", type: "Jurisprudencia", title: "Jurisprudencia relevante", subtitle: "Tesis y criterios aplicables al caso", content: "Cas. N.° 626-2022/Lima: uso de arma de fuego y amenaza como elementos de agravación. R. N.° 1543-2022: valoración convergente del video y el testimonio." },
-  { id: "doctrina", type: "Doctrina", title: "Doctrina recomendada", subtitle: "Artículos y autores clave", content: "Revisión del apoderamiento ilegítimo, disponibilidad potencial del bien y dolo de aprovechamiento en delitos patrimoniales." },
-  { id: "normativa", type: "Normativa", title: "Normativa aplicable", subtitle: "Leyes y disposiciones vigentes", content: "Código Penal, arts. 188 y 189; Código Procesal Penal, arts. 159, 160, 313 y 314; reglas de cadena de custodia." }
 ];
 
 const CASE_DATA = {
@@ -47,14 +66,19 @@ const appState = {
   caseMapNodes: DEFAULT_NODES.map(node => ({ ...node })),
   selectedMapNode: "hecho",
   lastAI: null,
-  activeReading: null,
   searchQuery: "",
   sidebarOpen: false,
   temporaryDocument: null,
   documentStatus: "idle",
   documentNotice: "",
   isAnalyzing: false,
-  analysisError: ""
+  analysisError: "",
+  analysisStatus: "",
+  documentName: "",
+  canvas: { ...EMPTY_CANVAS },
+  modeHistory: [],
+  savedCases: [],
+  selectedSavedCaseId: ""
 };
 
 const navItems = [
@@ -77,10 +101,24 @@ function escapeHTML(value = "") {
   return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 }
 
+function createEmptyCanvas() {
+  return JSON.parse(JSON.stringify(EMPTY_CANVAS));
+}
+
+function loadSavedCases() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SAVED_CASES_KEY) || "[]");
+    return Array.isArray(saved) ? saved : [];
+  } catch (error) {
+    return [];
+  }
+}
+
 function loadState() {
   try {
     localStorage.removeItem("bibliotecaFiscalInteligente.aiModel");
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    appState.savedCases = loadSavedCases();
     if (!saved || typeof saved !== "object") return;
     Object.assign(appState, saved);
     appState.notes = Array.isArray(saved.notes) ? saved.notes : [...DEFAULT_NOTES];
@@ -93,6 +131,10 @@ function loadState() {
     appState.isAnalyzing = false;
     appState.analysisError = "";
     appState.lastAI = null;
+    appState.analysisStatus = "";
+    appState.documentName = "";
+    appState.canvas = createEmptyCanvas();
+    appState.modeHistory = [];
     delete appState.aiModels;
     delete appState.selectedModel;
     saveState();
@@ -102,7 +144,7 @@ function loadState() {
 }
 
 function saveState() {
-  const { temporaryDocument, documentStatus, documentNotice, isAnalyzing, analysisError, uploadedFiles, lastAI, aiModels, selectedModel, ...persistable } = appState;
+  const { temporaryDocument, documentStatus, documentNotice, isAnalyzing, analysisError, analysisStatus, uploadedFiles, lastAI, canvas, modeHistory, savedCases, aiModels, selectedModel, ...persistable } = appState;
   const snapshot = { ...persistable, sidebarOpen: false, uploadedFiles: [], lastAI: null };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
 }
@@ -140,13 +182,16 @@ function buildAIContext() {
   ].join("\n");
 }
 
-async function askAI(question) {
+async function askAI({ mode = "default_document_analysis", question = "" } = {}) {
   const response = await fetch("/api/ai", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      mode,
       question,
       extractedDocumentText: appState.temporaryDocument?.text || "",
+      currentCanvas: appState.canvas,
+      caseId: appState.canvas.caseTitle || CASE_DATA.id,
       caseData: CASE_DATA,
       notes: appState.notes,
       context: buildAIContext()
@@ -173,12 +218,20 @@ function clearTemporaryDocument({ render = true } = {}) {
   appState.temporaryDocument = null;
   appState.documentStatus = "idle";
   appState.documentNotice = "";
+  appState.documentName = "";
   const fileInput = document.getElementById("file-input");
   const libraryFileInput = document.getElementById("library-file-input");
   if (fileInput) fileInput.value = "";
   if (libraryFileInput) libraryFileInput.value = "";
   saveState();
   if (render) renderApp();
+}
+
+function clearFileInputs() {
+  const fileInput = document.getElementById("file-input");
+  const libraryFileInput = document.getElementById("library-file-input");
+  if (fileInput) fileInput.value = "";
+  if (libraryFileInput) libraryFileInput.value = "";
 }
 
 function truncateExtractedText(text) {
@@ -234,6 +287,53 @@ async function extractTextFromDocx(file) {
   return normalizeExtractedText(result.value || "");
 }
 
+function arrayFromCanvasValue(value) {
+  if (Array.isArray(value)) return value.map(item => typeof item === "string" ? item : JSON.stringify(item)).filter(Boolean);
+  if (typeof value === "string" && value.trim()) return value.split(/\n+/).map(item => item.replace(/^[-*]\s*/, "").trim()).filter(Boolean);
+  return [];
+}
+
+function parseCanvasResponse(answer) {
+  const clean = String(answer || "").trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
+  try {
+    const parsed = JSON.parse(clean);
+    return {
+      ...createEmptyCanvas(),
+      caseTitle: String(parsed.caseTitle || parsed.title || "").trim(),
+      summary: String(parsed.summary || "").trim(),
+      facts: arrayFromCanvasValue(parsed.facts),
+      subjects: arrayFromCanvasValue(parsed.subjects),
+      timeline: arrayFromCanvasValue(parsed.timeline),
+      mainTheory: String(parsed.mainTheory || "").trim(),
+      alternativeTheory: String(parsed.alternativeTheory || "").trim(),
+      evidence: arrayFromCanvasValue(parsed.evidence),
+      elementsToProve: arrayFromCanvasValue(parsed.elementsToProve),
+      risks: arrayFromCanvasValue(parsed.risks),
+      missingInformation: arrayFromCanvasValue(parsed.missingInformation),
+      nextActions: arrayFromCanvasValue(parsed.nextActions),
+      followUpQuestions: arrayFromCanvasValue(parsed.followUpQuestions)
+    };
+  } catch (error) {
+    return { ...createEmptyCanvas(), freeText: answer || "", parseWarning: "El canvas se generó en texto libre. Puedes editarlo manualmente." };
+  }
+}
+
+function canvasFieldToText(field) {
+  const value = appState.canvas[field];
+  return Array.isArray(value) ? value.join("\n") : String(value || "");
+}
+
+function updateCanvasField(field, value) {
+  const arrayFields = ["facts", "subjects", "timeline", "evidence", "elementsToProve", "risks", "missingInformation", "nextActions", "followUpQuestions"];
+  appState.canvas[field] = arrayFields.includes(field)
+    ? value.split(/\n+/).map(item => item.replace(/^[-*]\s*/, "").trim()).filter(Boolean)
+    : value.trim();
+}
+
+function persistSavedCases() {
+  localStorage.setItem(SAVED_CASES_KEY, JSON.stringify(appState.savedCases));
+}
+
 function setActiveNav(sectionName) {
   appState.activeSection = sectionName;
   appState.sidebarOpen = false;
@@ -283,7 +383,6 @@ function renderMobileBar() {
 function renderApp() {
   const app = document.getElementById("app");
   app.innerHTML = `<div class="app-shell">${renderSidebar()}<main class="main-shell">${renderTopbar()}<div class="content">${renderSection(appState.activeSection)}</div></main>${renderMobileBar()}</div>`;
-  if (appState.activeSection === "analisis" && appState.activeWorkspacePanel === "map") initCaseMap();
   handleSearch(appState.searchQuery, false);
 }
 
@@ -302,29 +401,34 @@ function renderDashboard() {
       <div class="library-head"><div class="library-title"><span class="round-icon">${icon("i-book")}</span><div><h2>Analizador jurídico-documental</h2><p>Organiza fuentes, profundiza en argumentos y estudia tu caso con apoyo inteligente.</p></div></div></div>
       <img class="library-visual" src="${asset("study")}" alt="Libros jurídicos, lámpara y libro abierto">
       ${renderDropZone()}
-      <form class="ai-question" id="ai-form"><label for="ai-input">${icon("i-ai")} Pregunta a la IA sobre tu caso o documento</label><div class="ai-row"><input id="ai-input" autocomplete="off" placeholder="Ej.: Resume el documento y señala riesgos jurídicos." value="" ${appState.isAnalyzing ? "disabled" : ""}><button class="send-btn" type="submit" aria-label="Enviar pregunta" ${appState.isAnalyzing ? "disabled" : ""}>${icon("i-open")}</button></div>${renderAIStatus()}</form>
+      <form class="ai-question" id="ai-form"><label for="ai-input">${icon("i-ai")} Pregunta opcional para enfocar el análisis</label><div class="ai-row"><input id="ai-input" autocomplete="off" placeholder="Ej.: prioriza riesgos procesales o puntos débiles." value="" ${appState.isAnalyzing ? "disabled" : ""}><button class="send-btn" type="submit" aria-label="Analizar documento" ${appState.isAnalyzing ? "disabled" : ""}>${icon("i-open")}</button></div>${renderAIStatus()}</form>
       ${renderPrimaryResultPanel()}
-      <div class="quick-actions">${quickActionButton("summary", "i-book", "Resumir expediente")}${quickActionButton("compare", "i-scale", "Comparar criterios")}${quickActionButton("evidence", "i-search", "Extraer evidencias")}${quickActionButton("map", "i-map", "Generar mapa del caso")}</div>
+      ${renderCanvas()}
+      ${renderFocusActions()}
       <div class="workspace-output" id="workspace-output">${renderWorkspaceOutput()}</div>
     </section>
-    <aside class="right-column">${renderCaseCard()}<div class="support-panels">${renderReadingsCard()}${renderNotesCard()}</div></aside>
+    <aside class="right-column">${renderCaseCard()}<div class="support-panels">${renderSavedCasesCard()}${renderNotesCard()}</div></aside>
     ${renderStudyRoute()}
   </div>`;
 }
 
 function renderDropZone() {
   const hasDocument = Boolean(appState.temporaryDocument);
-  return `<div class="upload-wrap"><label class="drop-zone ${hasDocument ? "has-temp-file" : ""}" id="drop-zone">${icon("i-upload", "Cargar archivos")}<span><strong>${hasDocument ? "Documento temporal preparado" : "Arrastra y suelta un documento aquí"}</strong><small>PDF, DOCX, TXT o CSV · Máx. 4 MB</small><small class="privacy-note">Los documentos se procesan temporalmente y no se almacenan en esta demo.</small></span><input id="file-input" type="file" accept=".pdf,.docx,.txt,.csv" aria-label="Seleccionar documento" ${appState.isAnalyzing ? "disabled" : ""}></label>${hasDocument || appState.documentNotice ? `<div class="document-temp-panel"><strong>${escapeHTML(appState.documentNotice || "Documento listo para análisis.")}</strong>${hasDocument ? `<p>${escapeHTML(appState.temporaryDocument.summary)}</p>` : ""}<button class="secondary-btn" data-action="clear-document" type="button">Limpiar documento</button></div>` : ""}</div>`;
+  const analyzed = Boolean(appState.lastAI?.answer);
+  const panel = analyzed && hasDocument
+    ? `<div class="document-temp-panel discreet-temp-panel"><strong>Documento procesado temporalmente.</strong><p>Disponible solo para reanálisis en esta sesión. No se muestra ni se almacena el archivo.</p><button class="secondary-btn" data-action="clear-document" type="button">Limpiar documento</button></div>`
+    : (hasDocument || appState.documentNotice ? `<div class="document-temp-panel"><strong>${escapeHTML(appState.documentNotice || "Documento listo para análisis.")}</strong>${hasDocument ? `<p>${escapeHTML(appState.temporaryDocument.summary)}</p>` : ""}<button class="secondary-btn" data-action="clear-document" type="button">Limpiar documento</button></div>` : "");
+  return `<div class="upload-wrap"><label class="drop-zone ${hasDocument && !analyzed ? "has-temp-file" : ""}" id="drop-zone">${icon("i-upload", "Cargar archivos")}<span><strong>${hasDocument && !analyzed ? "Documento temporal en memoria" : "Subir documento"}</strong><small>PDF, DOCX, TXT o CSV · Máx. 4 MB</small><small class="privacy-note">Modo demo: el archivo no se almacena. Solo se guarda el análisis si presionas Guardar caso.</small></span><input id="file-input" type="file" accept=".pdf,.docx,.txt,.csv" aria-label="Seleccionar documento" ${appState.isAnalyzing ? "disabled" : ""}></label>${panel}</div>`;
 }
 
 function renderAIStatus() {
-  const statusText = appState.isAnalyzing ? "Analizando documento..." : appState.temporaryDocument ? "Analizador documental listo" : "IA documental activa";
+  const statusText = appState.analysisStatus || (appState.temporaryDocument ? "Documento listo para reanálisis" : "Sube un documento para iniciar");
   return `<div class="ai-status-row"><span>${escapeHTML(statusText)}</span><small>Modo demo gratuito</small></div>`;
 }
 
 function renderPrimaryResultPanel() {
   if (appState.isAnalyzing) {
-    return `<section class="analysis-result-card loading-result" aria-live="polite"><div class="result-title-row"><div><h2>Analizando documento...</h2><p>Esto puede tardar unos segundos.</p></div></div><div class="typing large-typing">Procesando la consulta <i></i><i></i><i></i></div></section>`;
+    return `<section class="analysis-result-card loading-result" aria-live="polite"><div class="result-title-row"><div><h2>${escapeHTML(appState.analysisStatus || "Analizando contenido...")}</h2><p>Esto puede tardar unos segundos.</p></div></div><div class="typing large-typing">Procesando la consulta <i></i><i></i><i></i></div></section>`;
   }
   if (appState.analysisError) {
     return `<section class="analysis-result-card error-result" aria-live="polite"><div class="result-title-row"><div><h2>Resultado del análisis</h2><p>No se pudo completar el análisis.</p></div><div class="answer-actions"><button class="secondary-btn compact-btn" data-action="clear-analysis" type="button">Limpiar análisis</button><button class="secondary-btn compact-btn" data-action="new-analysis" type="button">Nuevo análisis</button></div></div><p class="result-content">${escapeHTML(appState.analysisError)}</p></section>`;
@@ -333,24 +437,138 @@ function renderPrimaryResultPanel() {
   return "";
 }
 
-function quickActionButton(action, iconName, label) {
-  return `<button class="action-btn" data-quick-action="${action}">${icon(iconName)}<span>${label}</span></button>`;
+function renderCanvas() {
+  const hasCanvas = Boolean(appState.canvas.freeText || appState.canvas.summary || appState.canvas.caseTitle || appState.canvas.facts.length || appState.lastAI?.answer);
+  if (!hasCanvas) return "";
+  const fields = [
+    ["caseTitle", "Caso / asunto"],
+    ["summary", "Resumen del caso"],
+    ["facts", "Hechos relevantes"],
+    ["subjects", "Sujetos o partes"],
+    ["timeline", "Línea de tiempo"],
+    ["mainTheory", "Hipótesis principal"],
+    ["alternativeTheory", "Hipótesis alternativa"],
+    ["evidence", "Evidencias identificadas"],
+    ["elementsToProve", "Elementos por acreditar"],
+    ["risks", "Riesgos o contradicciones"],
+    ["missingInformation", "Información faltante"],
+    ["nextActions", "Próxima acción recomendada"],
+    ["followUpQuestions", "Preguntas para profundizar"]
+  ];
+  return `<section class="case-canvas card"><div class="canvas-head"><div><h2>Canvas de teoría del caso</h2><p>Edita y completa cada campo según tu criterio profesional.</p></div></div>${appState.canvas.parseWarning ? `<p class="canvas-warning">${escapeHTML(appState.canvas.parseWarning)}</p>` : ""}${appState.canvas.freeText ? `<label class="canvas-field canvas-free-text"><span>Análisis generado</span><textarea data-canvas-field="freeText">${escapeHTML(appState.canvas.freeText)}</textarea></label>` : ""}<div class="canvas-grid">${fields.map(([field, label]) => `<label class="canvas-field"><span>${label}</span><textarea data-canvas-field="${field}">${escapeHTML(canvasFieldToText(field))}</textarea></label>`).join("")}</div></section>`;
+}
+
+function renderFocusActions() {
+  const disabled = appState.isAnalyzing || !appState.temporaryDocument?.text;
+  return `<div class="action-zone"><div class="quick-actions focus-actions">${Object.entries(PROMPT_MODES).map(([mode, label]) => `<button class="action-btn" data-ai-mode="${mode}" ${disabled ? "disabled" : ""}>${icon(mode === "find_risks" ? "i-scale" : mode === "extract_evidence" ? "i-search" : "i-document")}<span>${label}</span></button>`).join("")}</div><div class="case-actions"><button class="primary-btn" data-action="save-case" type="button">Guardar caso</button><button class="secondary-btn" data-action="clear-case" type="button">Limpiar caso</button><button class="secondary-btn" data-action="export-analysis" type="button">Exportar análisis</button></div></div>`;
 }
 
 function renderWorkspaceOutput() {
   if (appState.lastAI?.answer || appState.isAnalyzing || appState.analysisError) return "";
-  if (appState.activeWorkspacePanel === "dashboard" && !appState.lastAI) return `<div class="output-grid"><div class="output-item"><strong>Caso preparado</strong><p>MP-2024-01567 tiene 12 evidencias y 3 actuaciones pendientes.</p></div><div class="output-item"><strong>Foco sugerido</strong><p>Contrastar video, testimonio y acta de incautación.</p></div><div class="output-item"><strong>Normas clave</strong><p>Arts. 188 y 189 del Código Penal.</p></div><div class="output-item"><strong>Próximo hito</strong><p>Solicitud de formalización de investigación.</p></div></div>`;
+  if (appState.activeWorkspacePanel === "dashboard" && !appState.lastAI) return `<div class="output-grid"><div class="output-item"><strong>Flujo principal</strong><p>Sube un documento y el análisis empezará automáticamente.</p></div><div class="output-item"><strong>Privacidad demo</strong><p>El archivo y el texto extraído no se guardan localmente.</p></div><div class="output-item"><strong>Canvas editable</strong><p>La teoría del caso se generará después del análisis.</p></div><div class="output-item"><strong>Reanálisis</strong><p>Usa modos enfocados solo después de cargar un documento legible.</p></div></div>`;
   if (appState.activeWorkspacePanel === "typing") return `<div class="typing">Analizando el caso <i></i><i></i><i></i></div>`;
   if (appState.activeWorkspacePanel === "ai" && appState.lastAI) return renderAnalyticalResponse(appState.lastAI);
-  if (appState.activeWorkspacePanel === "summary") return outputPanel(["Antecedentes|Investigación por robo agravado ocurrido en establecimiento comercial.", "Hechos relevantes|Amenaza con arma, sustracción y huida; existen registros audiovisuales.", "Estado procesal|Etapa de formalización con diligencias pendientes.", "Pendientes|Validar pericia, extracción celular y cadena de custodia."]);
-  if (appState.activeWorkspacePanel === "compare") return outputPanel(["Jurisprudencia|Uso de arma y amenaza como agravantes con corroboración convergente.", "Doctrina|Apoderamiento y disponibilidad potencial del bien sustraído.", "Normativa|Código Penal 188-189 y CPP 159-160.", "Criterio aplicable|Corroboración periférica entre video, testimonio e incautación.", "Riesgo interpretativo|Debilidad en identificación o ruptura de custodia."]);
-  if (appState.activeWorkspacePanel === "evidence") return outputPanel(["Documento|Acta de incautación y parte policial.", "Testimonio|Declaración de la víctima y testigos.", "Pericia|Extracción forense del celular recuperado.", "Cadena de custodia|Revisar continuidad y responsables.", "Contradicción|Diferencia horaria entre acta y metadatos.", "Observación crítica|Vincular cada hallazgo con un elemento del tipo penal."]);
-  if (appState.activeWorkspacePanel === "reading" && appState.activeReading) {
-    const reading = SUGGESTED_READINGS.find(item => item.id === appState.activeReading);
-    return `<div class="output-item"><strong>${reading.type}: ${reading.title}</strong><p>${reading.content}</p></div>`;
-  }
-  if (appState.activeWorkspacePanel === "map") return `<div class="output-item"><strong>Mapa del caso listo</strong><p>Abre Análisis del caso para mover nodos, revisar relaciones y guardar posiciones.</p><button class="secondary-btn" data-action="open-map" style="margin-top:8px">Abrir mapa interactivo</button></div>`;
   return "";
+}
+
+async function runFocusedMode(mode) {
+  if (!PROMPT_MODES[mode]) return showToast("Modo no compatible.", "warn");
+  if (!appState.temporaryDocument?.text) return showToast("Sube un documento legible para reanalizar.", "warn");
+  if (appState.isAnalyzing) return showToast("El análisis ya está en curso.", "warn");
+  appState.isAnalyzing = true;
+  appState.analysisError = "";
+  appState.analysisStatus = PROMPT_MODES[mode];
+  renderApp();
+  try {
+    const result = await askAI({ mode, question: `Ejecuta el modo: ${PROMPT_MODES[mode]}.` });
+    appState.lastAI = { question: PROMPT_MODES[mode], answer: result.answer, createdAt: Date.now(), documentWasTemporary: true, mode };
+    appState.modeHistory.push({ mode, label: PROMPT_MODES[mode], timestamp: new Date().toLocaleString("es-PE") });
+    appState.isAnalyzing = false;
+    appState.analysisStatus = "";
+    saveState();
+    renderApp();
+    showToast(`${PROMPT_MODES[mode]} completado.`, "success");
+  } catch (error) {
+    appState.isAnalyzing = false;
+    appState.analysisStatus = "";
+    appState.analysisError = error.message || "No se pudo completar el modo solicitado.";
+    saveState();
+    renderApp();
+    showToast(appState.analysisError, "warn");
+  }
+}
+
+function clearCase() {
+  clearTemporaryDocument({ render: false });
+  appState.lastAI = null;
+  appState.analysisError = "";
+  appState.analysisStatus = "";
+  appState.canvas = createEmptyCanvas();
+  appState.modeHistory = [];
+  appState.selectedSavedCaseId = "";
+  saveState();
+  renderApp();
+}
+
+function saveCurrentCase() {
+  if (!appState.lastAI?.answer && !appState.canvas.caseTitle && !appState.canvas.summary) {
+    return showToast("No hay análisis para guardar.", "warn");
+  }
+  const timestamp = new Date().toLocaleString("es-PE");
+  const item = {
+    id: appState.selectedSavedCaseId || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    caseTitle: appState.canvas.caseTitle || appState.documentName || "Caso documental",
+    answer: appState.lastAI?.answer || "",
+    canvas: appState.canvas,
+    timestamp,
+    originalFilename: appState.documentName || "",
+    modeHistory: appState.modeHistory
+  };
+  appState.savedCases = [item, ...appState.savedCases.filter(saved => saved.id !== item.id)].slice(0, 20);
+  appState.selectedSavedCaseId = item.id;
+  persistSavedCases();
+  renderApp();
+  showToast("Caso guardado localmente.", "success");
+}
+
+function loadSavedCase(id) {
+  const item = appState.savedCases.find(saved => saved.id === id);
+  if (!item) return showToast("No se encontró el caso guardado.", "warn");
+  clearTemporaryDocument({ render: false });
+  appState.selectedSavedCaseId = item.id;
+  appState.documentName = item.originalFilename || "";
+  appState.lastAI = { answer: item.answer, question: "Caso guardado", createdAt: Date.now(), documentWasTemporary: true };
+  appState.canvas = { ...createEmptyCanvas(), ...(item.canvas || {}) };
+  appState.modeHistory = Array.isArray(item.modeHistory) ? item.modeHistory : [];
+  appState.analysisError = "";
+  saveState();
+  renderApp();
+}
+
+function deleteSelectedSavedCase() {
+  if (!appState.selectedSavedCaseId) return showToast("Selecciona un caso guardado primero.", "warn");
+  appState.savedCases = appState.savedCases.filter(item => item.id !== appState.selectedSavedCaseId);
+  appState.selectedSavedCaseId = "";
+  persistSavedCases();
+  renderApp();
+  showToast("Caso local borrado.", "success");
+}
+
+function exportAnalysis() {
+  const payload = {
+    caseTitle: appState.canvas.caseTitle || "Caso documental",
+    timestamp: new Date().toISOString(),
+    originalFilename: appState.documentName || "",
+    analysis: appState.lastAI?.answer || "",
+    canvas: appState.canvas,
+    modeHistory: appState.modeHistory
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "studio-carpeta-analisis.json";
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 function outputPanel(items) {
@@ -370,9 +588,9 @@ function renderCaseCard() {
   return `<section class="card side-card case-card" data-searchable="${CASE_DATA.id} ${CASE_DATA.crime}"><div class="side-card-head"><h2>Caso activo</h2>${icon("i-folder")}</div><div class="case-id">${CASE_DATA.id}</div><p class="case-crime">${CASE_DATA.crime}</p><p class="side-meta">Actualizado ${CASE_DATA.updated.toLowerCase()}</p><button class="primary-btn" data-action="case-details">Ver detalles del caso</button></section>`;
 }
 
-function renderReadingsCard() {
-  const icons = { jurisprudencia: "i-scale", doctrina: "i-book", normativa: "i-document" };
-  return `<section class="card side-card readings-card"><div class="side-card-head"><h2>Lecturas sugeridas</h2>${icon("i-book")}</div>${SUGGESTED_READINGS.map(item => `<button class="reading-item" data-reading="${item.id}" data-searchable="${item.title} ${item.subtitle} ${item.content}">${icon(icons[item.id])}<span><strong>${item.title}</strong><small>${item.subtitle}</small></span><span>›</span></button>`).join("")}</section>`;
+function renderSavedCasesCard() {
+  const saved = appState.savedCases || [];
+  return `<section class="card side-card saved-cases-card"><div class="side-card-head"><h2>Casos locales</h2>${icon("i-folder")}</div><p class="privacy-note">Solo se guardan análisis, canvas, fecha y nombre del archivo.</p>${saved.length ? `<div class="saved-case-list">${saved.map(item => `<button class="reading-item" data-load-case="${escapeHTML(item.id)}"><span class="nav-icon">${icon("i-document")}</span><span><strong>${escapeHTML(item.caseTitle || "Caso sin título")}</strong><small>${escapeHTML(item.timestamp || "")}</small></span><span>›</span></button>`).join("")}</div>` : `<div class="output-item"><strong>Sin casos guardados</strong><p>Usa Guardar caso después de analizar un documento.</p></div>`}<button class="secondary-btn" data-action="delete-saved-case" type="button" style="margin-top:8px;width:100%" ${appState.selectedSavedCaseId ? "" : "disabled"}>Borrar caso</button></section>`;
 }
 
 function renderNotesCard() {
@@ -380,17 +598,12 @@ function renderNotesCard() {
 }
 
 function renderLibrarySection() {
-  const docs = [
-    { title: "Acta de incautación AI-2024-01567-01", type: "PDF · Evidencia", date: "15/04/2024" },
-    { title: "Código Penal: arts. 188 y 189", type: "Normativa", date: "Guardado" },
-    { title: "Cas. N.° 626-2022/Lima", type: "Jurisprudencia", date: "Relevante" }
-  ];
-  return `<section class="section-shell"><div class="section-header"><div><h2>Biblioteca IA</h2><p>Consulta y organiza tus documentos y fuentes jurídicas.</p></div><button class="primary-btn" data-action="upload-trigger">Analizar documento</button></div><div class="section-body"><div class="card panel"><div class="filter-row"><button class="filter-chip active" data-library-filter="todos">Todos</button><button class="filter-chip" data-library-filter="Documento">Documentos</button><button class="filter-chip" data-library-filter="Normativa">Normativa</button><button class="filter-chip" data-library-filter="Jurisprudencia">Jurisprudencia</button></div><p class="privacy-note">Los documentos cargados para análisis se procesan temporalmente y no se agregan a esta biblioteca.</p><div class="panel-scroll"><div class="document-grid" id="document-grid">${docs.map(doc => `<button class="doc-card" data-doc-type="${doc.type}" data-action="open-document" data-searchable="${escapeHTML(doc.title)} ${escapeHTML(doc.type)}"><span class="nav-icon">${icon("i-document")}</span><strong>${escapeHTML(doc.title)}</strong><small>${escapeHTML(doc.type)} · ${escapeHTML(doc.date || "Hoy")}</small></button>`).join("")}</div></div><input hidden id="library-file-input" type="file" accept=".pdf,.docx,.txt,.csv"></div><aside class="card panel"><h3>Lecturas sugeridas</h3>${SUGGESTED_READINGS.map(item => `<button class="reading-item" data-reading="${item.id}" data-searchable="${item.title} ${item.content}">${icon(item.id === "jurisprudencia" ? "i-scale" : item.id === "doctrina" ? "i-book" : "i-document")}<span><strong>${item.title}</strong><small>${item.type}</small></span><span>›</span></button>`).join("")}</aside></div></section>`;
+  const saved = appState.savedCases || [];
+  return `<section class="section-shell"><div class="section-header"><div><h2>Biblioteca IA</h2><p>Casos guardados localmente y documentos temporales para análisis.</p></div><button class="primary-btn" data-action="upload-trigger">Analizar documento</button></div><div class="section-body"><div class="card panel"><p class="privacy-note">Modo demo: los archivos no se guardan. Solo se conserva el análisis si presionas Guardar caso.</p>${renderDropZone()}<input hidden id="library-file-input" type="file" accept=".pdf,.docx,.txt,.csv"><div class="document-grid saved-doc-grid">${saved.length ? saved.map(item => `<button class="doc-card" data-load-case="${escapeHTML(item.id)}" data-searchable="${escapeHTML(item.caseTitle || "")} ${escapeHTML(item.originalFilename || "")}"><span class="nav-icon">${icon("i-document")}</span><strong>${escapeHTML(item.caseTitle || "Caso sin título")}</strong><small>${escapeHTML(item.originalFilename || "Análisis local")} · ${escapeHTML(item.timestamp || "")}</small></button>`).join("") : `<div class="output-item"><strong>Sin casos locales</strong><p>Analiza un documento y usa Guardar caso para conservar solo el resultado y el canvas.</p></div>`}</div></div><aside class="side-stack"><section class="card panel"><h3>Persistencia local</h3><p class="privacy-note">No se almacena el archivo original ni el texto extraído. Puedes borrar el caso seleccionado desde el panel de Casos locales.</p></section>${renderSavedCasesCard()}</aside></div></section>`;
 }
 
 function renderAnalysisSection() {
-  if (appState.activeWorkspacePanel === "map") return renderMapSection();
-  return `<section class="section-shell"><div class="section-header"><div><h2>Análisis del caso</h2><p>${CASE_DATA.id} · ${CASE_DATA.crime} · ${CASE_DATA.stage}</p></div><div class="section-tools"><button class="secondary-btn" data-action="simulate-save">Guardar análisis</button><button class="primary-btn" data-action="open-map">Mapa del caso</button></div></div><div class="section-body"><div class="card panel"><div class="panel-scroll"><div class="analysis-grid"><article class="analysis-card"><h3>Hechos</h3><p>El investigado habría ingresado armado al establecimiento, amenazado a la víctima y sustraído dinero y celulares.</p></article><article class="analysis-card"><h3>Teoría jurídica</h3><p>Apoderamiento ilegítimo mediante amenaza con arma, con ánimo de lucro y perjuicio patrimonial.</p></article><article class="analysis-card"><h3>Evidencias</h3><ul><li>Video de cámara</li><li>Extracción de celular</li><li>Acta de incautación</li><li>Declaración de la víctima</li></ul></article><article class="analysis-card"><h3>Puntos débiles</h3><ul><li>Cadena de custodia</li><li>Precisión de la identificación</li><li>Correspondencia de horarios</li></ul></article><button class="analysis-card map-launch" data-action="open-map"><h3>Mapa dinámico</h3><p>Relaciona hechos, sujetos, evidencias, normas, riesgos y acciones.</p></button><article class="analysis-card"><h3>Próximas acciones</h3><p>Validar metadatos, completar pericia y preparar solicitud de formalización.</p></article></div></div></div><aside class="card panel"><h3>Asistencia IA-Legal</h3><p style="font:12px/1.5 Arial,sans-serif;color:#5f6865">Selecciona un enfoque para profundizar el análisis.</p><div class="filter-row"><button class="prompt-chip" data-prompt="¿Qué contradicciones debo priorizar?">Contradicciones</button><button class="prompt-chip" data-prompt="¿Qué norma fortalece la imputación?">Normativa</button><button class="prompt-chip" data-prompt="¿Qué evidencia falta?">Evidencia faltante</button></div><form id="side-ai-form"><input class="panel-input" id="side-ai-input" placeholder="Pregunta sobre el caso" ${appState.isAnalyzing ? "disabled" : ""}><div class="ai-status-row"><span>IA documental activa</span><small>Modo demo gratuito</small></div><button class="primary-btn" style="margin-top:8px;width:100%" ${appState.isAnalyzing ? "disabled" : ""}>Analizar</button></form><div id="side-ai-response" class="output-item" style="margin-top:10px"><strong>Lectura inicial</strong><p>La teoría presenta coherencia; conviene reforzar identificación y continuidad de custodia.</p></div></aside></div></section>`;
+  return `<section class="section-shell"><div class="section-header"><div><h2>Análisis del caso</h2><p>Sube un documento o continúa con un caso local guardado.</p></div><button class="primary-btn" data-action="upload-trigger">Analizar documento</button></div><div class="section-body"><div class="analysis-main-flow"><section class="analyzer-card card"><div class="analyzer-head"><div><h2>Analizador jurídico-documental</h2><p>PDF con texto seleccionable, DOCX, TXT o CSV.</p></div>${renderAIStatus()}</div>${renderDropZone()}${renderQuestionForm()}${renderPrimaryResultPanel()}${renderCanvas()}${renderFocusActions()}</section></div><aside class="side-stack">${renderCaseCard()}${renderSavedCasesCard()}</aside></div></section>`;
 }
 
 function renderMapSection() {
@@ -411,6 +624,9 @@ async function handleFileDrop(files) {
   const file = Array.from(files || [])[0];
   if (!file) return;
   clearTemporaryDocument({ render: false });
+  appState.lastAI = null;
+  appState.analysisError = "";
+  appState.canvas = createEmptyCanvas();
   const ext = getFileExtension(file);
   if (!SUPPORTED_EXTENSIONS.includes(ext)) {
     showToast("Usa PDF, DOCX, TXT o CSV.", "warn");
@@ -422,7 +638,8 @@ async function handleFileDrop(files) {
     renderApp();
     return;
   }
-  setDocumentStatus("extracting", "Extrayendo texto...");
+  appState.analysisStatus = "Extrayendo texto del documento...";
+  setDocumentStatus("extracting", "Extrayendo texto del documento...");
   try {
     const extracted = normalizeExtractedText(await extractTextFromFile(file));
     if (!extracted) {
@@ -435,15 +652,16 @@ async function handleFileDrop(files) {
       summary: `${ext.toUpperCase()} temporal · ${truncated.text.length.toLocaleString("es-PE")} caracteres extraídos${truncated.truncated ? " · recortado" : ""}`,
       truncated: truncated.truncated
     };
+    appState.documentName = file.name;
     appState.uploadedFiles = [];
     appState.documentStatus = "ready";
     appState.documentNotice = truncated.truncated
-      ? "El documento fue recortado para la demo. Usa una versión resumida o divide el archivo."
+      ? "El documento fue recortado para esta demo."
       : "Analizador documental listo.";
     addHistoryEvent({ action: "Documento preparado", section: appState.activeSection, description: "Documento temporal listo para análisis." });
     saveState();
     renderApp();
-    showToast("Documento temporal listo para analizar.", "success");
+    await runDefaultDocumentWorkflow("");
   } catch (error) {
     clearTemporaryDocument({ render: false });
     appState.documentNotice = error.message || "No se pudo extraer texto legible del documento. Intenta con PDF con texto seleccionable, DOCX, TXT o CSV.";
@@ -452,46 +670,44 @@ async function handleFileDrop(files) {
   }
 }
 
-async function handleAIQuestion(question) {
-  const clean = question.trim();
-  if (!clean) return showToast("Escribe una pregunta para iniciar el análisis.", "warn");
-  if (appState.isAnalyzing) return showToast("El análisis ya está en curso.", "warn");
-  if (appState.temporaryDocument && !appState.temporaryDocument.text) {
-    return showToast("No se pudo extraer texto legible del documento. Intenta con PDF con texto seleccionable, DOCX, TXT o CSV.", "warn");
-  }
-  const hadDocument = Boolean(appState.temporaryDocument?.text);
-  if (hadDocument) appState.documentNotice = "Analizando documento...";
+async function runDefaultDocumentWorkflow(question = "") {
+  if (!appState.temporaryDocument?.text) return showToast("Sube un documento legible para iniciar el análisis.", "warn");
   appState.isAnalyzing = true;
   appState.analysisError = "";
-  appState.activeWorkspacePanel = "typing";
+  appState.analysisStatus = "Analizando contenido...";
   renderApp();
   try {
-    const result = await askAI(clean);
-    appState.lastAI = { question: clean, answer: result.answer, createdAt: Date.now(), documentWasTemporary: hadDocument };
-    clearTemporaryDocument({ render: false });
-    appState.documentNotice = "";
-    appState.isAnalyzing = false;
-    appState.activeWorkspacePanel = "ai";
-    addHistoryEvent({ action: "Consulta a IA-Legal", section: "inicio", description: clean });
-    saveState();
+    const analysis = await askAI({ mode: "default_document_analysis", question });
+    appState.lastAI = { question, answer: analysis.answer, createdAt: Date.now(), documentWasTemporary: true, mode: "default_document_analysis" };
+    appState.modeHistory.push({ mode: "default_document_analysis", label: "Análisis automático", timestamp: new Date().toLocaleString("es-PE") });
+    appState.analysisStatus = "Generando canvas de teoría del caso...";
     renderApp();
-    showToast("Análisis con IA completado.", "success");
+    const canvasResult = await askAI({ mode: "case_theory_canvas", question: "Genera el canvas inicial de teoría del caso." });
+    appState.canvas = parseCanvasResponse(canvasResult.answer);
+    if (!appState.canvas.caseTitle) appState.canvas.caseTitle = appState.documentName || CASE_DATA.id;
+    appState.modeHistory.push({ mode: "case_theory_canvas", label: "Generar teoría del caso", timestamp: new Date().toLocaleString("es-PE") });
+    appState.isAnalyzing = false;
+    appState.analysisStatus = "";
+    appState.documentNotice = "";
+    appState.activeWorkspacePanel = "ai";
+    saveState();
+    clearFileInputs();
+    renderApp();
+    showToast("Análisis y canvas generados.", "success");
   } catch (error) {
     appState.isAnalyzing = false;
+    appState.analysisStatus = "";
     appState.analysisError = error.message || "No se pudo completar el análisis con IA.";
-    appState.activeWorkspacePanel = "dashboard";
     saveState();
     renderApp();
-    showToast(error.message || "No se pudo completar el análisis con IA.", "warn");
+    showToast(appState.analysisError, "warn");
   }
 }
 
-function renderQuickAction(actionName) {
-  appState.activeWorkspacePanel = actionName;
-  addHistoryEvent({ action: "Acción rápida", section: "inicio", description: ({ summary: "Resumir expediente", compare: "Comparar criterios", evidence: "Extraer evidencias", map: "Generar mapa del caso" })[actionName] });
-  saveState();
-  renderApp();
-  showToast("Espacio de análisis actualizado.", "success");
+async function handleAIQuestion(question) {
+  const clean = question.trim();
+  if (appState.isAnalyzing) return showToast("El análisis ya está en curso.", "warn");
+  return runDefaultDocumentWorkflow(clean);
 }
 
 function openCaseDetails() {
@@ -501,18 +717,6 @@ function openCaseDetails() {
 
 function closeModal() {
   document.getElementById("modal").innerHTML = "";
-}
-
-function renderReadingPanel(type) {
-  const reading = SUGGESTED_READINGS.find(item => item.id === type);
-  if (!reading) return;
-  appState.activeSection = "inicio";
-  appState.activeReading = type;
-  appState.activeWorkspacePanel = "reading";
-  addHistoryEvent({ action: "Lectura abierta", section: "biblioteca", description: reading.title });
-  saveState();
-  renderApp();
-  showToast(`${reading.type} abierta en el espacio central.`);
 }
 
 function saveNotes() {
@@ -614,10 +818,10 @@ function bindEvents() {
       renderApp();
       return;
     }
-    const quick = event.target.closest("[data-quick-action]");
-    if (quick) return renderQuickAction(quick.dataset.quickAction);
-    const reading = event.target.closest("[data-reading]");
-    if (reading) return renderReadingPanel(reading.dataset.reading);
+    const aiMode = event.target.closest("[data-ai-mode]");
+    if (aiMode) return runFocusedMode(aiMode.dataset.aiMode);
+    const loadCase = event.target.closest("[data-load-case]");
+    if (loadCase) return loadSavedCase(loadCase.dataset.loadCase);
     const step = event.target.closest("[data-study-step]");
     if (step) {
       appState.activeStudyStep = Number(step.dataset.studyStep);
@@ -628,33 +832,22 @@ function bindEvents() {
     if (deleteNote) {
       appState.notes.splice(Number(deleteNote.dataset.deleteNote), 1); addHistoryEvent({ action: "Nota eliminada", section: "notas", description: "Se eliminó una nota local." }); saveState(); renderApp(); return;
     }
-    const filter = event.target.closest("[data-library-filter]");
-    if (filter) {
-      document.querySelectorAll("[data-library-filter]").forEach(btn => btn.classList.toggle("active", btn === filter));
-      document.querySelectorAll("[data-doc-type]").forEach(doc => { doc.hidden = filter.dataset.libraryFilter !== "todos" && !doc.dataset.docType.includes(filter.dataset.libraryFilter); });
-      return;
-    }
-    const prompt = event.target.closest("[data-prompt]");
-    if (prompt) { const input = document.getElementById("side-ai-input"); if (input) { input.value = prompt.dataset.prompt; input.focus(); } return; }
-    const node = event.target.closest("[data-node-id]");
-    if (node) { appState.selectedMapNode = node.dataset.nodeId; saveState(); renderApp(); return; }
     const action = event.target.closest("[data-action]")?.dataset.action;
     if (!action) return;
     if (action === "toggle-sidebar") { appState.sidebarOpen = !appState.sidebarOpen; renderApp(); }
     if (action === "case-details") openCaseDetails();
     if (action === "close-modal") closeModal();
     if (action === "upload-trigger") document.getElementById("library-file-input")?.click();
-    if (action === "open-document") showToast("Vista previa simulada del documento.");
     if (action === "user-menu") showToast("Sesión demo: Doctor · caso activo MP-2024-01567");
     if (action === "add-note") { appState.notes.push(""); saveState(); renderApp(); document.querySelector("[data-note-index]:last-of-type")?.focus(); }
-    if (action === "simulate-save") { addHistoryEvent({ action: "Análisis guardado", section: "analisis", description: "Se actualizó el análisis del caso." }); showToast("Análisis guardado localmente.", "success"); }
-    if (action === "open-map") { appState.activeSection = "analisis"; appState.activeWorkspacePanel = "map"; saveState(); renderApp(); }
-    if (action === "close-map") { appState.activeWorkspacePanel = "dashboard"; saveState(); renderApp(); }
-    if (action === "reset-map") resetCaseMap();
     if (action === "clear-history") { appState.history = []; saveState(); renderApp(); showToast("Historial local limpiado."); }
     if (action === "clear-document") { clearTemporaryDocument(); showToast("Documento temporal limpiado."); }
     if (action === "clear-analysis") { appState.lastAI = null; appState.analysisError = ""; appState.documentNotice = ""; appState.activeWorkspacePanel = "dashboard"; saveState(); renderApp(); showToast("Análisis limpiado."); }
     if (action === "new-analysis") { appState.lastAI = null; appState.analysisError = ""; appState.documentNotice = ""; appState.activeWorkspacePanel = "dashboard"; saveState(); renderApp(); document.getElementById("ai-input")?.focus(); }
+    if (action === "save-case") saveCurrentCase();
+    if (action === "clear-case") { clearCase(); showToast("Caso limpiado."); }
+    if (action === "delete-saved-case") deleteSelectedSavedCase();
+    if (action === "export-analysis") exportAnalysis();
     if (action === "copy-answer") {
       const answer = appState.lastAI?.answer || "";
       if (!answer) return showToast("No hay respuesta para copiar.", "warn");
@@ -665,33 +858,14 @@ function bindEvents() {
 
   document.addEventListener("submit", async event => {
     if (event.target.id === "ai-form") { event.preventDefault(); handleAIQuestion(document.getElementById("ai-input").value); }
-    if (event.target.id === "side-ai-form") {
-      event.preventDefault();
-      const input = document.getElementById("side-ai-input");
-      const response = document.getElementById("side-ai-response");
-      if (!input.value.trim()) return showToast("Escribe una consulta.", "warn");
-      if (appState.isAnalyzing) return showToast("El análisis ya está en curso.", "warn");
-      const hadDocument = Boolean(appState.temporaryDocument?.text);
-      appState.isAnalyzing = true;
-      appState.analysisError = "";
-      response.innerHTML = `<div class="typing">Analizando <i></i><i></i><i></i></div>`;
-      try {
-        const result = await askAI(input.value.trim());
-        response.innerHTML = `<strong>Respuesta IA</strong><p style="white-space:pre-wrap">${escapeHTML(result.answer)}</p>${hadDocument ? `<small class="privacy-note">Documento analizado temporalmente. No fue almacenado.</small>` : ""}`;
-        clearTemporaryDocument({ render: false });
-        appState.isAnalyzing = false;
-        addHistoryEvent({ action: "Consulta en análisis", section: "analisis", description: input.value.trim() });
-        showToast("Análisis con IA completado.", "success");
-      } catch (error) {
-        appState.isAnalyzing = false;
-        response.innerHTML = `<strong>No se pudo completar el análisis</strong><p>${escapeHTML(error.message || "Intenta nuevamente en unos minutos.")}</p>`;
-        showToast(error.message || "No se pudo completar el análisis con IA.", "warn");
-      }
-    }
   });
 
   document.addEventListener("input", event => {
     if (event.target.id === "global-search") handleSearch(event.target.value);
+    if (event.target.matches("[data-canvas-field]")) {
+      updateCanvasField(event.target.dataset.canvasField, event.target.value);
+      return;
+    }
     if (event.target.matches("[data-note-index]")) {
       appState.notes[Number(event.target.dataset.noteIndex)] = event.target.value;
       saveState();
@@ -719,7 +893,6 @@ function bindEvents() {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); document.getElementById("global-search")?.focus(); }
     if (event.key === "Escape") { closeModal(); if (appState.sidebarOpen) { appState.sidebarOpen = false; renderApp(); } }
   });
-  window.addEventListener("resize", () => { if (appState.activeWorkspacePanel === "map") drawMapConnectors(); });
 }
 
 function initApp() {
@@ -738,14 +911,9 @@ window.handleSearch = handleSearch;
 window.handleFileDrop = handleFileDrop;
 window.handleAIQuestion = handleAIQuestion;
 window.renderAnalyticalResponse = renderAnalyticalResponse;
-window.renderQuickAction = renderQuickAction;
 window.openCaseDetails = openCaseDetails;
-window.renderReadingPanel = renderReadingPanel;
 window.renderNotes = renderNotes;
 window.saveNotes = saveNotes;
 window.addHistoryEvent = addHistoryEvent;
-window.initCaseMap = initCaseMap;
-window.enableDragForNodes = enableDragForNodes;
-window.resetCaseMap = resetCaseMap;
 
 document.addEventListener("DOMContentLoaded", initApp, { once: true });

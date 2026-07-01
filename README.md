@@ -1,6 +1,6 @@
-# Biblioteca Fiscal Inteligente
+# Studio Carpeta
 
-Aplicación web para organizar fuentes, estudiar un expediente fiscal y realizar análisis jurídico/documental asistido por IA mediante modelos gratuitos configurados en Vercel.
+Aplicación web para análisis jurídico-documental peruano con flujo de documento primero, funciones serverless de Vercel e IA configurada desde variables de entorno del servidor.
 
 ## Página publicada
 
@@ -8,13 +8,14 @@ Aplicación web para organizar fuentes, estudiar un expediente fiscal y realizar
 
 ## Funciones
 
-- Navegación sin recarga: Inicio, Biblioteca IA, Análisis del caso, Notas e Historial.
-- Análisis temporal de documentos PDF, DOCX, TXT y CSV.
-- Consultas IA-Legal reales mediante `/api/ai` en Vercel.
-- Modelo gratuito seleccionado silenciosamente desde el backend.
-- Mapa del caso con nodos arrastrables y posiciones guardadas en `localStorage`.
+- Carga de documentos PDF con texto seleccionable, DOCX, TXT y CSV.
+- Extracción temporal del texto en el navegador.
+- Análisis automático mediante `/api/ai` en Vercel.
+- Generación de un Canvas de teoría del caso editable.
+- Modos enfocados reales: extraer hechos, extraer evidencias, detectar riesgos, próximas acciones y resumen ejecutivo.
+- Guardado local opcional del análisis y canvas en `localStorage`.
 - Notas editables, búsqueda global, modal del caso e historial automático.
-- Escritorio compacto sin scroll de página y diseño móvil con navegación adaptada.
+- Diseño responsive de una columna en móvil, sin solapamientos ni scroll horizontal.
 - HTML, CSS y JavaScript puro con funciones serverless de Vercel.
 
 ## IA en Vercel
@@ -30,14 +31,26 @@ Reglas de seguridad:
 - Los modelos pagados se rechazan antes de llamar al proveedor.
 - Las respuestas siguen una estructura fija de análisis peruano legal, fiscal y documental, e indican cuando falta información.
 - `/api/models.js` se conserva como endpoint interno/de depuración, pero la interfaz no expone selector de modelos.
+- Los modos de análisis se construyen del lado servidor y rechazan valores no soportados.
 
 ## Privacidad documental
 
 - Los archivos se procesan temporalmente en el navegador.
-- El texto extraído se envía a `/api/ai` junto con la pregunta, datos del caso y notas disponibles.
-- No se guarda contenido documental ni metadatos de archivos en `localStorage`.
-- Tras recibir la respuesta, el archivo y el texto extraído se limpian de la interfaz y memoria de la app.
+- El texto extraído se envía a `/api/ai` junto con el modo de análisis, pregunta opcional, canvas actual y contexto disponible.
+- No se guarda el archivo original ni el texto extraído en `localStorage`.
+- Solo se guarda localmente el título del caso, respuesta IA, canvas, fecha, nombre original del archivo e historial de modos si el usuario presiona Guardar caso.
 - Límite de demo: 4 MB por archivo y 20,000 caracteres enviados al análisis.
+
+## Variables de entorno en Vercel
+
+```env
+AI_PROVIDER=openrouter
+AI_API_KEY=
+AI_BASE_URL=https://openrouter.ai/api/v1
+AI_MODEL_DEFAULT=openrouter/free
+AI_ALLOWED_MODELS=openrouter/free,nvidia/nemotron-3-ultra-550b-a55b:free,qwen/qwen3-coder:free,qwen/qwen3.6-plus-preview:free
+AI_MAX_TOKENS=1200
+```
 
 ## Caso de demostración
 
