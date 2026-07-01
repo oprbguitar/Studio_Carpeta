@@ -14,11 +14,11 @@ Si falta información o no puedes verificar algo con el contexto entregado, dilo
 No des por existente ningun documento, prueba, norma, sentencia o dato que no este en la consulta o en el contexto.
 Responde siempre en español claro y profesional, con esta estructura exacta:
 1. Resumen ejecutivo
-2. Hechos relevantes
+2. Contenido relevante del documento
 3. Análisis jurídico/documental
-4. Riesgos o puntos débiles
+4. Riesgos, contradicciones o vacíos
 5. Próxima acción recomendada
-6. Limitaciones de la respuesta`;
+6. Limitaciones del análisis`;
 
 function parseAllowedModels() {
   const configured = (process.env.AI_ALLOWED_MODELS || "")
@@ -59,14 +59,14 @@ function pickError(status, upstreamError) {
     return {
       statusCode: 503,
       code: "provider_unavailable",
-      message: "OpenRouter no esta disponible en este momento. Intenta nuevamente en unos minutos."
+      message: "El proveedor de IA no esta disponible en este momento. Intenta nuevamente en unos minutos."
     };
   }
 
   return {
     statusCode: 502,
     code: "provider_error",
-    message: "OpenRouter no pudo completar la solicitud."
+    message: "El proveedor de IA no pudo completar la solicitud."
   };
 }
 
@@ -102,19 +102,34 @@ module.exports = async function handler(req, res) {
 
   const allowedModels = parseAllowedModels();
   const defaultModel = process.env.AI_MODEL_DEFAULT || "openrouter/free";
-  const requestedModel = typeof body.model === "string" && body.model.trim() ? body.model.trim() : defaultModel;
+  const clientModel = typeof body.model === "string" ? body.model.trim() : "";
 
-  if (!isFreeModel(requestedModel) || !allowedModels.includes(requestedModel)) {
+  if (clientModel && (!isFreeModel(clientModel) || !allowedModels.includes(clientModel))) {
     return sendError(res, 400, "invalid_model", "Modelo no permitido. Solo se aceptan openrouter/free o modelos que terminan en :free.");
   }
+
+  const requestedModel = allowedModels.includes(defaultModel) ? defaultModel : allowedModels[0] || "openrouter/free";
 
   const baseUrl = process.env.AI_BASE_URL || "https://openrouter.ai/api/v1";
   const maxTokens = Number.parseInt(process.env.AI_MAX_TOKENS || "900", 10);
   const context = typeof body.context === "string" ? body.context.trim().slice(0, 4000) : "";
+  const extractedDocumentText = typeof body.extractedDocumentText === "string"
+    ? body.extractedDocumentText.trim().slice(0, 20000)
+    : "";
+  const caseData = body.caseData && typeof body.caseData === "object"
+    ? JSON.stringify(body.caseData).slice(0, 3000)
+    : "";
+  const notes = Array.isArray(body.notes)
+    ? body.notes.filter(note => typeof note === "string" && note.trim()).slice(0, 20).join("\n- ").slice(0, 3000)
+    : "";
 
-  const userContent = context
-    ? `Contexto disponible:\n${context}\n\nPregunta:\n${question}`
-    : `Pregunta:\n${question}`;
+  const userContent = [
+    context ? `Contexto disponible:\n${context}` : "",
+    caseData ? `Datos del caso:\n${caseData}` : "",
+    notes ? `Notas disponibles:\n- ${notes}` : "",
+    extractedDocumentText ? `Texto extraído del documento temporal:\n${extractedDocumentText}` : "No se adjuntó texto documental legible en esta consulta.",
+    `Pregunta:\n${question}`
+  ].filter(Boolean).join("\n\n");
 
   try {
     const upstream = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
@@ -144,7 +159,7 @@ module.exports = async function handler(req, res) {
 
     const answer = data?.choices?.[0]?.message?.content?.trim();
     if (!answer) {
-      return sendError(res, 502, "empty_provider_response", "OpenRouter respondio sin contenido util.");
+      return sendError(res, 502, "empty_provider_response", "El proveedor de IA respondio sin contenido util.");
     }
 
     return sendJson(res, 200, {
@@ -153,6 +168,6 @@ module.exports = async function handler(req, res) {
       usage: data.usage || null
     });
   } catch (error) {
-    return sendError(res, 503, "provider_unavailable", "No se pudo conectar con OpenRouter en este momento.");
+    return sendError(res, 503, "provider_unavailable", "No se pudo conectar con el proveedor de IA en este momento.");
   }
 };

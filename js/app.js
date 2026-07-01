@@ -1,7 +1,9 @@
 "use strict";
 
 const STORAGE_KEY = "bibliotecaFiscalInteligente.v1";
-const MODEL_STORAGE_KEY = "bibliotecaFiscalInteligente.aiModel";
+const MAX_FILE_SIZE = 4 * 1024 * 1024;
+const MAX_EXTRACTED_TEXT = 20000;
+const SUPPORTED_EXTENSIONS = ["txt", "pdf", "docx", "csv"];
 const DEFAULT_NOTES = [
   "Inconsistencias en cadena de custodia.",
   "Jurisprudencia favorable sobre testigos.",
@@ -48,8 +50,10 @@ const appState = {
   activeReading: null,
   searchQuery: "",
   sidebarOpen: false,
-  aiModels: [{ id: "openrouter/free", label: "openrouter/free" }],
-  selectedModel: localStorage.getItem(MODEL_STORAGE_KEY) || "openrouter/free"
+  temporaryDocument: null,
+  documentStatus: "idle",
+  documentNotice: "",
+  isAnalyzing: false
 };
 
 const navItems = [
@@ -74,21 +78,30 @@ function escapeHTML(value = "") {
 
 function loadState() {
   try {
+    localStorage.removeItem("bibliotecaFiscalInteligente.aiModel");
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
     if (!saved || typeof saved !== "object") return;
     Object.assign(appState, saved);
     appState.notes = Array.isArray(saved.notes) ? saved.notes : [...DEFAULT_NOTES];
     appState.history = Array.isArray(saved.history) ? saved.history : [];
-    appState.uploadedFiles = Array.isArray(saved.uploadedFiles) ? saved.uploadedFiles : [];
+    appState.uploadedFiles = [];
     appState.caseMapNodes = Array.isArray(saved.caseMapNodes) && saved.caseMapNodes.length ? saved.caseMapNodes : DEFAULT_NODES.map(node => ({ ...node }));
-    appState.selectedModel = localStorage.getItem(MODEL_STORAGE_KEY) || saved.selectedModel || "openrouter/free";
+    appState.temporaryDocument = null;
+    appState.documentStatus = "idle";
+    appState.documentNotice = "";
+    appState.isAnalyzing = false;
+    appState.lastAI = null;
+    delete appState.aiModels;
+    delete appState.selectedModel;
+    saveState();
   } catch (error) {
     console.warn("No se pudo recuperar la sesión local.", error);
   }
 }
 
 function saveState() {
-  const snapshot = { ...appState, sidebarOpen: false };
+  const { temporaryDocument, documentStatus, documentNotice, isAnalyzing, uploadedFiles, lastAI, aiModels, selectedModel, ...persistable } = appState;
+  const snapshot = { ...persistable, sidebarOpen: false, uploadedFiles: [], lastAI: null };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
 }
 
@@ -114,40 +127,14 @@ function showToast(message, type = "") {
   window.setTimeout(() => toast.remove(), 3200);
 }
 
-async function loadAIModels() {
-  try {
-    const response = await fetch("/api/models");
-    const data = await response.json();
-    if (!response.ok) throw new Error(data?.error?.message || "No se pudieron cargar los modelos.");
-    const models = Array.isArray(data.models) ? data.models : [];
-    if (!models.length) throw new Error("No hay modelos gratuitos disponibles.");
-    appState.aiModels = models;
-    if (!models.some(model => model.id === appState.selectedModel)) {
-      appState.selectedModel = data.defaultModel || models[0].id;
-      localStorage.setItem(MODEL_STORAGE_KEY, appState.selectedModel);
-    }
-    renderApp();
-  } catch (error) {
-    showToast(error.message || "No se pudieron cargar los modelos gratuitos.", "warn");
-  }
-}
-
-function renderModelSelector(id) {
-  return `<select class="panel-input model-select" id="${id}" data-ai-model aria-label="Modelo gratuito de OpenRouter" title="Modelo gratuito de OpenRouter">${appState.aiModels.map(model => `<option value="${escapeHTML(model.id)}" ${model.id === appState.selectedModel ? "selected" : ""}>${escapeHTML(model.label || model.id)}</option>`).join("")}</select>`;
-}
-
 function buildAIContext() {
-  const files = appState.uploadedFiles.length
-    ? appState.uploadedFiles.map(file => `- ${file.name} (${file.typeLabel || "Documento"})`).join("\n")
-    : "No se ha cargado contenido documental verificable; solo hay nombres o datos demo.";
   return [
     `Caso activo: ${CASE_DATA.id}`,
     `Delito o materia: ${CASE_DATA.crime}`,
     `Etapa: ${CASE_DATA.stage}`,
     `Sujetos procesales registrados: ${CASE_DATA.subjects}`,
     `Pendientes: ${CASE_DATA.pending}`,
-    `Alertas: ${CASE_DATA.alerts}`,
-    `Documentos disponibles en la interfaz:\n${files}`
+    `Alertas: ${CASE_DATA.alerts}`
   ].join("\n");
 }
 
@@ -157,7 +144,9 @@ async function askAI(question) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       question,
-      model: appState.selectedModel,
+      extractedDocumentText: appState.temporaryDocument?.text || "",
+      caseData: CASE_DATA,
+      notes: appState.notes,
       context: buildAIContext()
     })
   });
@@ -169,6 +158,78 @@ async function askAI(question) {
     throw error;
   }
   return data;
+}
+
+function setDocumentStatus(status, notice = "") {
+  appState.documentStatus = status;
+  appState.documentNotice = notice;
+  renderApp();
+}
+
+function clearTemporaryDocument({ render = true } = {}) {
+  appState.uploadedFiles = [];
+  appState.temporaryDocument = null;
+  appState.documentStatus = "idle";
+  appState.documentNotice = "";
+  const fileInput = document.getElementById("file-input");
+  const libraryFileInput = document.getElementById("library-file-input");
+  if (fileInput) fileInput.value = "";
+  if (libraryFileInput) libraryFileInput.value = "";
+  saveState();
+  if (render) renderApp();
+}
+
+function truncateExtractedText(text) {
+  if (text.length <= MAX_EXTRACTED_TEXT) return { text, truncated: false };
+  return { text: text.slice(0, MAX_EXTRACTED_TEXT), truncated: true };
+}
+
+function getFileExtension(file) {
+  return file.name.split(".").pop().toLowerCase();
+}
+
+function normalizeExtractedText(text) {
+  return String(text || "").replace(/\u0000/g, "").replace(/[ \t]+\n/g, "\n").replace(/\n{4,}/g, "\n\n\n").trim();
+}
+
+async function extractTextFromFile(file) {
+  const ext = getFileExtension(file);
+  if (ext === "txt" || ext === "csv") return normalizeExtractedText(await file.text());
+  if (ext === "pdf") return extractTextFromPDF(file);
+  if (ext === "docx") return extractTextFromDocx(file);
+  throw new Error("Formato no compatible. Usa PDF, DOCX, TXT o CSV.");
+}
+
+async function waitForGlobal(name, message) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    if (window[name]) return window[name];
+    await new Promise(resolve => window.setTimeout(resolve, 100));
+  }
+  throw new Error(message);
+}
+
+async function extractTextFromPDF(file) {
+  const pdfjsLib = await waitForGlobal("pdfjsLib", "No se pudo cargar el lector PDF de la demo.");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+  const pages = [];
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const content = await page.getTextContent();
+    pages.push(content.items.map(item => item.str || "").join(" "));
+  }
+  const text = normalizeExtractedText(pages.join("\n\n"));
+  if (!text || text.length < 20) {
+    throw new Error("Este PDF parece escaneado o sin texto seleccionable. La demo aún no tiene OCR.");
+  }
+  return text;
+}
+
+async function extractTextFromDocx(file) {
+  const mammoth = await waitForGlobal("mammoth", "No se pudo cargar el lector DOCX de la demo.");
+  const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+  return normalizeExtractedText(result.value || "");
 }
 
 function setActiveNav(sectionName) {
@@ -236,10 +297,10 @@ function renderDashboard() {
   return `<div class="dashboard-grid">
     <div class="primary-column">
       <section class="card library-card">
-        <div class="library-head"><div class="library-title"><span class="round-icon">${icon("i-book")}</span><div><h2>Biblioteca de análisis con IA</h2><p>Organiza fuentes, profundiza en argumentos y estudia tu caso con apoyo inteligente.</p></div></div></div>
+        <div class="library-head"><div class="library-title"><span class="round-icon">${icon("i-book")}</span><div><h2>Analizador jurídico-documental</h2><p>Organiza fuentes, profundiza en argumentos y estudia tu caso con apoyo inteligente.</p></div></div></div>
         <img class="library-visual" src="${asset("study")}" alt="Libros jurídicos, lámpara y libro abierto">
         ${renderDropZone()}
-        <form class="ai-question" id="ai-form"><label for="ai-input">${icon("i-ai")} Pregunta a la IA sobre tu caso</label><div class="ai-row"><input id="ai-input" autocomplete="off" placeholder="Ej.: ¿Qué argumentos, contradicciones o normas debo revisar primero?" value=""><button class="send-btn" type="submit" aria-label="Enviar pregunta">${icon("i-open")}</button></div><div style="margin-top:8px">${renderModelSelector("ai-model")}</div></form>
+        <form class="ai-question" id="ai-form"><label for="ai-input">${icon("i-ai")} Pregunta a la IA sobre tu caso o documento</label><div class="ai-row"><input id="ai-input" autocomplete="off" placeholder="Ej.: Resume el documento y señala riesgos jurídicos." value="" ${appState.isAnalyzing ? "disabled" : ""}><button class="send-btn" type="submit" aria-label="Enviar pregunta" ${appState.isAnalyzing ? "disabled" : ""}>${icon("i-open")}</button></div>${renderAIStatus()}</form>
         <div class="quick-actions">${quickActionButton("summary", "i-book", "Resumir expediente")}${quickActionButton("compare", "i-scale", "Comparar criterios")}${quickActionButton("evidence", "i-search", "Extraer evidencias")}${quickActionButton("map", "i-map", "Generar mapa del caso")}</div>
         <div class="workspace-output" id="workspace-output">${renderWorkspaceOutput()}</div>
       </section>
@@ -250,8 +311,13 @@ function renderDashboard() {
 }
 
 function renderDropZone() {
-  const chips = appState.uploadedFiles.slice(-3).map(file => `<span class="file-chip" data-searchable="${escapeHTML(file.name)}">${escapeHTML(file.name)}</span>`).join("");
-  return `<label class="drop-zone" id="drop-zone">${icon("i-upload", "Cargar archivos")}<span><strong>Arrastra y suelta tus documentos aquí</strong><small>PDF, DOCX, TXT · Máx. 50 MB por archivo</small>${chips ? `<span class="uploaded-chips">${chips}</span>` : ""}</span><input id="file-input" type="file" accept=".pdf,.docx,.txt" multiple aria-label="Seleccionar documentos"></label>`;
+  const hasDocument = Boolean(appState.temporaryDocument);
+  return `<div class="upload-wrap"><label class="drop-zone ${hasDocument ? "has-temp-file" : ""}" id="drop-zone">${icon("i-upload", "Cargar archivos")}<span><strong>${hasDocument ? "Documento temporal preparado" : "Arrastra y suelta un documento aquí"}</strong><small>PDF, DOCX, TXT o CSV · Máx. 4 MB</small><small class="privacy-note">Los documentos se procesan temporalmente y no se almacenan en esta demo.</small></span><input id="file-input" type="file" accept=".pdf,.docx,.txt,.csv" aria-label="Seleccionar documento" ${appState.isAnalyzing ? "disabled" : ""}></label>${hasDocument || appState.documentNotice ? `<div class="document-temp-panel"><strong>${escapeHTML(appState.documentNotice || "Documento listo para análisis.")}</strong>${hasDocument ? `<p>${escapeHTML(appState.temporaryDocument.summary)}</p>` : ""}<button class="secondary-btn" data-action="clear-document" type="button">Limpiar documento</button></div>` : ""}</div>`;
+}
+
+function renderAIStatus() {
+  const statusText = appState.isAnalyzing ? "Analizando documento..." : appState.temporaryDocument ? "Analizador documental listo" : "IA documental activa";
+  return `<div class="ai-status-row"><span>${escapeHTML(statusText)}</span><small>Modo demo gratuito</small></div>`;
 }
 
 function quickActionButton(action, iconName, label) {
@@ -278,7 +344,7 @@ function outputPanel(items) {
 }
 
 function renderAnalyticalResponse(result) {
-  return `<div class="output-item" data-searchable="${escapeHTML(result.answer || "")}"><strong>Respuesta IA · ${escapeHTML(result.model || appState.selectedModel)}</strong><p style="white-space:pre-wrap">${escapeHTML(result.answer || "No se obtuvo respuesta.")}</p></div>`;
+  return `<div class="output-item answer-card" data-searchable="${escapeHTML(result.answer || "")}"><div class="answer-head"><strong>Respuesta IA</strong><div class="answer-actions"><button class="secondary-btn compact-btn" data-action="copy-answer" type="button">Copiar respuesta</button><button class="secondary-btn compact-btn" data-action="clear-analysis" type="button">Limpiar análisis</button></div></div><p style="white-space:pre-wrap">${escapeHTML(result.answer || "No se obtuvo respuesta.")}</p>${result.documentWasTemporary ? `<small class="privacy-note">Documento analizado temporalmente. No fue almacenado.</small>` : ""}</div>`;
 }
 
 function renderStudyRoute() {
@@ -300,19 +366,17 @@ function renderNotesCard() {
 }
 
 function renderLibrarySection() {
-  const files = appState.uploadedFiles;
   const docs = [
-    ...files.map(file => ({ title: file.name, type: file.typeLabel || "Documento", date: file.date })),
     { title: "Acta de incautación AI-2024-01567-01", type: "PDF · Evidencia", date: "15/04/2024" },
     { title: "Código Penal: arts. 188 y 189", type: "Normativa", date: "Guardado" },
     { title: "Cas. N.° 626-2022/Lima", type: "Jurisprudencia", date: "Relevante" }
   ];
-  return `<section class="section-shell"><div class="section-header"><div><h2>Biblioteca IA</h2><p>Consulta y organiza tus documentos y fuentes jurídicas.</p></div><button class="primary-btn" data-action="upload-trigger">Agregar documento</button></div><div class="section-body"><div class="card panel"><div class="filter-row"><button class="filter-chip active" data-library-filter="todos">Todos</button><button class="filter-chip" data-library-filter="Documento">Documentos</button><button class="filter-chip" data-library-filter="Normativa">Normativa</button><button class="filter-chip" data-library-filter="Jurisprudencia">Jurisprudencia</button></div><div class="panel-scroll"><div class="document-grid" id="document-grid">${docs.map(doc => `<button class="doc-card" data-doc-type="${doc.type}" data-action="open-document" data-searchable="${escapeHTML(doc.title)} ${escapeHTML(doc.type)}"><span class="nav-icon">${icon("i-document")}</span><strong>${escapeHTML(doc.title)}</strong><small>${escapeHTML(doc.type)} · ${escapeHTML(doc.date || "Hoy")}</small></button>`).join("")}</div></div><input hidden id="library-file-input" type="file" accept=".pdf,.docx,.txt" multiple></div><aside class="card panel"><h3>Lecturas sugeridas</h3>${SUGGESTED_READINGS.map(item => `<button class="reading-item" data-reading="${item.id}" data-searchable="${item.title} ${item.content}">${icon(item.id === "jurisprudencia" ? "i-scale" : item.id === "doctrina" ? "i-book" : "i-document")}<span><strong>${item.title}</strong><small>${item.type}</small></span><span>›</span></button>`).join("")}</aside></div></section>`;
+  return `<section class="section-shell"><div class="section-header"><div><h2>Biblioteca IA</h2><p>Consulta y organiza tus documentos y fuentes jurídicas.</p></div><button class="primary-btn" data-action="upload-trigger">Analizar documento</button></div><div class="section-body"><div class="card panel"><div class="filter-row"><button class="filter-chip active" data-library-filter="todos">Todos</button><button class="filter-chip" data-library-filter="Documento">Documentos</button><button class="filter-chip" data-library-filter="Normativa">Normativa</button><button class="filter-chip" data-library-filter="Jurisprudencia">Jurisprudencia</button></div><p class="privacy-note">Los documentos cargados para análisis se procesan temporalmente y no se agregan a esta biblioteca.</p><div class="panel-scroll"><div class="document-grid" id="document-grid">${docs.map(doc => `<button class="doc-card" data-doc-type="${doc.type}" data-action="open-document" data-searchable="${escapeHTML(doc.title)} ${escapeHTML(doc.type)}"><span class="nav-icon">${icon("i-document")}</span><strong>${escapeHTML(doc.title)}</strong><small>${escapeHTML(doc.type)} · ${escapeHTML(doc.date || "Hoy")}</small></button>`).join("")}</div></div><input hidden id="library-file-input" type="file" accept=".pdf,.docx,.txt,.csv"></div><aside class="card panel"><h3>Lecturas sugeridas</h3>${SUGGESTED_READINGS.map(item => `<button class="reading-item" data-reading="${item.id}" data-searchable="${item.title} ${item.content}">${icon(item.id === "jurisprudencia" ? "i-scale" : item.id === "doctrina" ? "i-book" : "i-document")}<span><strong>${item.title}</strong><small>${item.type}</small></span><span>›</span></button>`).join("")}</aside></div></section>`;
 }
 
 function renderAnalysisSection() {
   if (appState.activeWorkspacePanel === "map") return renderMapSection();
-  return `<section class="section-shell"><div class="section-header"><div><h2>Análisis del caso</h2><p>${CASE_DATA.id} · ${CASE_DATA.crime} · ${CASE_DATA.stage}</p></div><div class="section-tools"><button class="secondary-btn" data-action="simulate-save">Guardar análisis</button><button class="primary-btn" data-action="open-map">Mapa del caso</button></div></div><div class="section-body"><div class="card panel"><div class="panel-scroll"><div class="analysis-grid"><article class="analysis-card"><h3>Hechos</h3><p>El investigado habría ingresado armado al establecimiento, amenazado a la víctima y sustraído dinero y celulares.</p></article><article class="analysis-card"><h3>Teoría jurídica</h3><p>Apoderamiento ilegítimo mediante amenaza con arma, con ánimo de lucro y perjuicio patrimonial.</p></article><article class="analysis-card"><h3>Evidencias</h3><ul><li>Video de cámara</li><li>Extracción de celular</li><li>Acta de incautación</li><li>Declaración de la víctima</li></ul></article><article class="analysis-card"><h3>Puntos débiles</h3><ul><li>Cadena de custodia</li><li>Precisión de la identificación</li><li>Correspondencia de horarios</li></ul></article><button class="analysis-card map-launch" data-action="open-map"><h3>Mapa dinámico</h3><p>Relaciona hechos, sujetos, evidencias, normas, riesgos y acciones.</p></button><article class="analysis-card"><h3>Próximas acciones</h3><p>Validar metadatos, completar pericia y preparar solicitud de formalización.</p></article></div></div></div><aside class="card panel"><h3>Asistencia IA-Legal</h3><p style="font:12px/1.5 Arial,sans-serif;color:#5f6865">Selecciona un enfoque para profundizar el análisis.</p><div class="filter-row"><button class="prompt-chip" data-prompt="¿Qué contradicciones debo priorizar?">Contradicciones</button><button class="prompt-chip" data-prompt="¿Qué norma fortalece la imputación?">Normativa</button><button class="prompt-chip" data-prompt="¿Qué evidencia falta?">Evidencia faltante</button></div><form id="side-ai-form"><input class="panel-input" id="side-ai-input" placeholder="Pregunta sobre el caso"><div style="margin-top:8px">${renderModelSelector("side-ai-model")}</div><button class="primary-btn" style="margin-top:8px;width:100%">Analizar</button></form><div id="side-ai-response" class="output-item" style="margin-top:10px"><strong>Lectura inicial</strong><p>La teoría presenta coherencia; conviene reforzar identificación y continuidad de custodia.</p></div></aside></div></section>`;
+  return `<section class="section-shell"><div class="section-header"><div><h2>Análisis del caso</h2><p>${CASE_DATA.id} · ${CASE_DATA.crime} · ${CASE_DATA.stage}</p></div><div class="section-tools"><button class="secondary-btn" data-action="simulate-save">Guardar análisis</button><button class="primary-btn" data-action="open-map">Mapa del caso</button></div></div><div class="section-body"><div class="card panel"><div class="panel-scroll"><div class="analysis-grid"><article class="analysis-card"><h3>Hechos</h3><p>El investigado habría ingresado armado al establecimiento, amenazado a la víctima y sustraído dinero y celulares.</p></article><article class="analysis-card"><h3>Teoría jurídica</h3><p>Apoderamiento ilegítimo mediante amenaza con arma, con ánimo de lucro y perjuicio patrimonial.</p></article><article class="analysis-card"><h3>Evidencias</h3><ul><li>Video de cámara</li><li>Extracción de celular</li><li>Acta de incautación</li><li>Declaración de la víctima</li></ul></article><article class="analysis-card"><h3>Puntos débiles</h3><ul><li>Cadena de custodia</li><li>Precisión de la identificación</li><li>Correspondencia de horarios</li></ul></article><button class="analysis-card map-launch" data-action="open-map"><h3>Mapa dinámico</h3><p>Relaciona hechos, sujetos, evidencias, normas, riesgos y acciones.</p></button><article class="analysis-card"><h3>Próximas acciones</h3><p>Validar metadatos, completar pericia y preparar solicitud de formalización.</p></article></div></div></div><aside class="card panel"><h3>Asistencia IA-Legal</h3><p style="font:12px/1.5 Arial,sans-serif;color:#5f6865">Selecciona un enfoque para profundizar el análisis.</p><div class="filter-row"><button class="prompt-chip" data-prompt="¿Qué contradicciones debo priorizar?">Contradicciones</button><button class="prompt-chip" data-prompt="¿Qué norma fortalece la imputación?">Normativa</button><button class="prompt-chip" data-prompt="¿Qué evidencia falta?">Evidencia faltante</button></div><form id="side-ai-form"><input class="panel-input" id="side-ai-input" placeholder="Pregunta sobre el caso" ${appState.isAnalyzing ? "disabled" : ""}><div class="ai-status-row"><span>IA documental activa</span><small>Modo demo gratuito</small></div><button class="primary-btn" style="margin-top:8px;width:100%" ${appState.isAnalyzing ? "disabled" : ""}>Analizar</button></form><div id="side-ai-response" class="output-item" style="margin-top:10px"><strong>Lectura inicial</strong><p>La teoría presenta coherencia; conviene reforzar identificación y continuidad de custodia.</p></div></aside></div></section>`;
 }
 
 function renderMapSection() {
@@ -326,44 +390,79 @@ function renderNotes() {
 
 function renderHistory() {
   const history = appState.history.length ? appState.history : [{ action: "Biblioteca preparada", timestamp: "Hoy, 10:45", section: "inicio", description: "Se cargó el contexto del caso MP-2024-01567." }];
-  return `<section class="section-shell"><div class="section-header"><div><h2>Historial</h2><p>Actividad de análisis y trazabilidad de la sesión.</p></div><button class="secondary-btn" data-action="clear-history">Limpiar historial</button></div><div class="section-body"><div class="card panel"><div class="panel-scroll"><div class="history-list">${history.map(item => `<article class="history-item" data-searchable="${escapeHTML(item.action)} ${escapeHTML(item.description)} ${escapeHTML(item.section)}"><span class="nav-icon">${icon("i-history")}</span><div><strong>${escapeHTML(item.action)}</strong><p>${escapeHTML(item.description)} · ${escapeHTML(sectionTitle(item.section))}</p></div><time class="history-time">${escapeHTML(item.timestamp)}</time></article>`).join("")}</div></div></div><aside class="card panel"><h3>Resumen de actividad</h3>${outputPanel([`Documentos|${appState.uploadedFiles.length} cargados`, `Preguntas IA|${appState.lastAI ? "1 reciente" : "Sin consultas recientes"}`, `Notas|${appState.notes.length} activas`, `Ruta|Paso ${appState.activeStudyStep} de 4`])}</aside></div></section>`;
+  return `<section class="section-shell"><div class="section-header"><div><h2>Historial</h2><p>Actividad de análisis y trazabilidad de la sesión.</p></div><button class="secondary-btn" data-action="clear-history">Limpiar historial</button></div><div class="section-body"><div class="card panel"><div class="panel-scroll"><div class="history-list">${history.map(item => `<article class="history-item" data-searchable="${escapeHTML(item.action)} ${escapeHTML(item.description)} ${escapeHTML(item.section)}"><span class="nav-icon">${icon("i-history")}</span><div><strong>${escapeHTML(item.action)}</strong><p>${escapeHTML(item.description)} · ${escapeHTML(sectionTitle(item.section))}</p></div><time class="history-time">${escapeHTML(item.timestamp)}</time></article>`).join("")}</div></div></div><aside class="card panel"><h3>Resumen de actividad</h3>${outputPanel([`Documentos|Procesamiento temporal`, `Preguntas IA|${appState.lastAI ? "1 reciente" : "Sin consultas recientes"}`, `Notas|${appState.notes.length} activas`, `Ruta|Paso ${appState.activeStudyStep} de 4`])}</aside></div></section>`;
 }
 
-function handleFileDrop(files) {
-  const allowed = ["pdf", "docx", "txt"];
-  const accepted = Array.from(files).filter(file => {
-    const ext = file.name.split(".").pop().toLowerCase();
-    return allowed.includes(ext) && file.size <= 50 * 1024 * 1024;
-  });
-  if (!accepted.length) {
-    showToast("Usa archivos PDF, DOCX o TXT de hasta 50 MB.", "warn");
+async function handleFileDrop(files) {
+  const file = Array.from(files || [])[0];
+  if (!file) return;
+  clearTemporaryDocument({ render: false });
+  const ext = getFileExtension(file);
+  if (!SUPPORTED_EXTENSIONS.includes(ext)) {
+    showToast("Usa PDF, DOCX, TXT o CSV.", "warn");
+    renderApp();
     return;
   }
-  accepted.forEach(file => {
-    if (!appState.uploadedFiles.some(item => item.name === file.name && item.size === file.size)) {
-      appState.uploadedFiles.push({ name: file.name, size: file.size, typeLabel: file.name.split(".").pop().toUpperCase(), date: new Date().toLocaleDateString("es-PE") });
-      addHistoryEvent({ action: "Documento cargado", section: "biblioteca", description: file.name });
+  if (file.size > MAX_FILE_SIZE) {
+    showToast("El archivo supera el límite de 4 MB para esta demo.", "warn");
+    renderApp();
+    return;
+  }
+  setDocumentStatus("extracting", "Extrayendo texto...");
+  try {
+    const extracted = normalizeExtractedText(await extractTextFromFile(file));
+    if (!extracted) {
+      throw new Error("No se pudo extraer texto legible del documento. Intenta con PDF con texto seleccionable, DOCX, TXT o CSV.");
     }
-  });
-  saveState();
-  showToast(`${accepted.length} documento${accepted.length > 1 ? "s" : ""} incorporado${accepted.length > 1 ? "s" : ""}.`, "success");
-  renderApp();
+    setDocumentStatus("preparing", "Preparando análisis...");
+    const truncated = truncateExtractedText(extracted);
+    appState.temporaryDocument = {
+      text: truncated.text,
+      summary: `${ext.toUpperCase()} temporal · ${truncated.text.length.toLocaleString("es-PE")} caracteres extraídos${truncated.truncated ? " · recortado" : ""}`,
+      truncated: truncated.truncated
+    };
+    appState.uploadedFiles = [];
+    appState.documentStatus = "ready";
+    appState.documentNotice = truncated.truncated
+      ? "El documento fue recortado para la demo. Usa una versión resumida o divide el archivo."
+      : "Analizador documental listo.";
+    addHistoryEvent({ action: "Documento preparado", section: appState.activeSection, description: "Documento temporal listo para análisis." });
+    saveState();
+    renderApp();
+    showToast("Documento temporal listo para analizar.", "success");
+  } catch (error) {
+    clearTemporaryDocument({ render: false });
+    appState.documentNotice = error.message || "No se pudo extraer texto legible del documento. Intenta con PDF con texto seleccionable, DOCX, TXT o CSV.";
+    renderApp();
+    showToast(appState.documentNotice, "warn");
+  }
 }
 
 async function handleAIQuestion(question) {
   const clean = question.trim();
   if (!clean) return showToast("Escribe una pregunta para iniciar el análisis.", "warn");
+  if (appState.isAnalyzing) return showToast("El análisis ya está en curso.", "warn");
+  if (appState.temporaryDocument && !appState.temporaryDocument.text) {
+    return showToast("No se pudo extraer texto legible del documento. Intenta con PDF con texto seleccionable, DOCX, TXT o CSV.", "warn");
+  }
+  const hadDocument = Boolean(appState.temporaryDocument?.text);
+  if (hadDocument) appState.documentNotice = "Analizando documento...";
+  appState.isAnalyzing = true;
   appState.activeWorkspacePanel = "typing";
   renderApp();
   try {
     const result = await askAI(clean);
-    appState.lastAI = { question: clean, answer: result.answer, model: result.model, createdAt: Date.now() };
+    appState.lastAI = { question: clean, answer: result.answer, createdAt: Date.now(), documentWasTemporary: hadDocument };
+    clearTemporaryDocument({ render: false });
+    appState.documentNotice = hadDocument ? "Documento analizado temporalmente. No fue almacenado." : "";
+    appState.isAnalyzing = false;
     appState.activeWorkspacePanel = "ai";
     addHistoryEvent({ action: "Consulta a IA-Legal", section: "inicio", description: clean });
     saveState();
     renderApp();
     showToast("Análisis con IA completado.", "success");
   } catch (error) {
+    appState.isAnalyzing = false;
     appState.activeWorkspacePanel = "dashboard";
     saveState();
     renderApp();
@@ -537,6 +636,14 @@ function bindEvents() {
     if (action === "close-map") { appState.activeWorkspacePanel = "dashboard"; saveState(); renderApp(); }
     if (action === "reset-map") resetCaseMap();
     if (action === "clear-history") { appState.history = []; saveState(); renderApp(); showToast("Historial local limpiado."); }
+    if (action === "clear-document") { clearTemporaryDocument(); showToast("Documento temporal limpiado."); }
+    if (action === "clear-analysis") { appState.lastAI = null; appState.activeWorkspacePanel = "dashboard"; saveState(); renderApp(); showToast("Análisis limpiado."); }
+    if (action === "copy-answer") {
+      const answer = appState.lastAI?.answer || "";
+      if (!answer) return showToast("No hay respuesta para copiar.", "warn");
+      if (!navigator.clipboard) return showToast("Copia no disponible en este navegador.", "warn");
+      navigator.clipboard.writeText(answer).then(() => showToast("Respuesta copiada.", "success")).catch(() => showToast("No se pudo copiar la respuesta.", "warn"));
+    }
   });
 
   document.addEventListener("submit", async event => {
@@ -546,13 +653,19 @@ function bindEvents() {
       const input = document.getElementById("side-ai-input");
       const response = document.getElementById("side-ai-response");
       if (!input.value.trim()) return showToast("Escribe una consulta.", "warn");
+      if (appState.isAnalyzing) return showToast("El análisis ya está en curso.", "warn");
+      const hadDocument = Boolean(appState.temporaryDocument?.text);
+      appState.isAnalyzing = true;
       response.innerHTML = `<div class="typing">Analizando <i></i><i></i><i></i></div>`;
       try {
         const result = await askAI(input.value.trim());
-        response.innerHTML = `<strong>Respuesta IA · ${escapeHTML(result.model || appState.selectedModel)}</strong><p style="white-space:pre-wrap">${escapeHTML(result.answer)}</p>`;
+        response.innerHTML = `<strong>Respuesta IA</strong><p style="white-space:pre-wrap">${escapeHTML(result.answer)}</p>${hadDocument ? `<small class="privacy-note">Documento analizado temporalmente. No fue almacenado.</small>` : ""}`;
+        clearTemporaryDocument({ render: false });
+        appState.isAnalyzing = false;
         addHistoryEvent({ action: "Consulta en análisis", section: "analisis", description: input.value.trim() });
         showToast("Análisis con IA completado.", "success");
       } catch (error) {
+        appState.isAnalyzing = false;
         response.innerHTML = `<strong>No se pudo completar el análisis</strong><p>${escapeHTML(error.message || "Intenta nuevamente en unos minutos.")}</p>`;
         showToast(error.message || "No se pudo completar el análisis con IA.", "warn");
       }
@@ -561,11 +674,6 @@ function bindEvents() {
 
   document.addEventListener("input", event => {
     if (event.target.id === "global-search") handleSearch(event.target.value);
-    if (event.target.matches("[data-ai-model]")) {
-      appState.selectedModel = event.target.value;
-      localStorage.setItem(MODEL_STORAGE_KEY, appState.selectedModel);
-      saveState();
-    }
     if (event.target.matches("[data-note-index]")) {
       appState.notes[Number(event.target.dataset.noteIndex)] = event.target.value;
       saveState();
@@ -573,12 +681,6 @@ function bindEvents() {
   });
 
   document.addEventListener("change", event => {
-    if (event.target.matches("[data-ai-model]")) {
-      appState.selectedModel = event.target.value;
-      localStorage.setItem(MODEL_STORAGE_KEY, appState.selectedModel);
-      saveState();
-      return;
-    }
     if (event.target.id === "file-input" || event.target.id === "library-file-input") handleFileDrop(event.target.files);
   });
 
@@ -606,7 +708,6 @@ function initApp() {
   loadState();
   bindEvents();
   renderApp();
-  loadAIModels();
 }
 
 window.initApp = initApp;
