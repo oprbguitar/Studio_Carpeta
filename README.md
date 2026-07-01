@@ -21,16 +21,7 @@ Aplicación web para organizar fuentes, estudiar un expediente fiscal y realizar
 
 La clave de OpenRouter debe permanecer solo en variables de entorno del servidor. No se expone en el frontend.
 
-Variables esperadas:
 
-```env
-AI_PROVIDER=openrouter
-AI_API_KEY=
-AI_BASE_URL=https://openrouter.ai/api/v1
-AI_MODEL_DEFAULT=openrouter/free
-AI_ALLOWED_MODELS=openrouter/free,nvidia/nemotron-3-ultra-550b-a55b:free,qwen/qwen3-coder:free,qwen/qwen3.6-plus-preview:free
-AI_MAX_TOKENS=900
-```
 
 Reglas de seguridad:
 
